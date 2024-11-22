@@ -111,7 +111,7 @@ db.sqlite3
 # Data and Experiments
 # ------------------------------
 data/
-experiments/
+# experiments/
 
 # ------------------------------
 # Checkpoints and Model Files
