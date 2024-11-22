@@ -1,0 +1,14 @@
+torch
+torchvision
+transformers
+datasets
+numpy
+pandas
+matplotlib
+jupyter
+PySyft
+pyyaml
+pytest
+syft
+scipy
+POT

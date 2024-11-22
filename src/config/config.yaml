@@ -1,0 +1,20 @@
+# src/config/config.yaml
+
+model:
+  name: vit  # Options: 'vit', 'resnet'
+  num_labels: 10
+
+training:
+  batch_size: 32
+  epochs: 1
+  learning_rate: 1e-4
+
+federated_learning:
+  num_clients: 5
+  rounds: 5
+  fraction_fit: 0.6  # Fraction of clients selected
+  num_shards: 50      # New parameter to partition 100 samples into 50 shards (2 samples per shard)
+  num_samples: 100    # New parameter to limit the dataset size
+
+fedbary:
+  use_validation: true  # Use validation data for global distribution

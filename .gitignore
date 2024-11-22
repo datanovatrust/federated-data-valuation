@@ -1,0 +1,182 @@
+# ------------------------------
+# Python Bytecode and C Extensions
+# ------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ------------------------------
+# Virtual Environments
+# ------------------------------
+# Virtual environment directories
+venv/
+.env/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ------------------------------
+# Distribution / Packaging
+# ------------------------------
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ------------------------------
+# Testing and Coverage Reports
+# ------------------------------
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ------------------------------
+# Documentation
+# ------------------------------
+docs/_build/
+site/
+
+# ------------------------------
+# Jupyter Notebooks
+# ------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ------------------------------
+# Editor and IDE Configurations
+# ------------------------------
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Vim
+*.swp
+*.swo
+*.swn
+*.vim
+
+# ------------------------------
+# OS Generated Files
+# ------------------------------
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ------------------------------
+# Logs and Databases
+# ------------------------------
+logs/
+*.log
+db.sqlite3
+
+# ------------------------------
+# Data and Experiments
+# ------------------------------
+data/
+experiments/
+
+# ------------------------------
+# Checkpoints and Model Files
+# ------------------------------
+# Exclude model checkpoints
+checkpoints/
+
+# Alternatively, to exclude specific model file extensions globally
+# Uncomment the following lines if model files are stored outside 'checkpoints/' or in various locations
+# *.pt
+# *.pth
+# *.pkl
+# *.h5
+
+# ------------------------------
+# Docker
+# ------------------------------
+# Exclude Docker-related temporary files
+*.dockerfile
+
+# ------------------------------
+# Backup and Temporary Files
+# ------------------------------
+*.bak
+*.tmp
+*.swp
+*.swo
+*~
+
+# ------------------------------
+# Additional Python Specifics
+# ------------------------------
+# Cython debug symbols
+cython_debug/
+
+# PyInstaller
+# Usually these files are written by a python script from a template
+# before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ------------------------------
+# Environment Variable Files
+# ------------------------------
+.env
+.env.*
+
+# ------------------------------
+# Other Caches and Logs
+# ------------------------------
+.cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# ------------------------------
+# Miscellaneous
+# ------------------------------
+*.mo
+*.pot
+*.cover
+*.py,cover
+*.egg
+*.egg-info/
