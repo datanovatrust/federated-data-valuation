@@ -1,6 +1,6 @@
 # 🛡️ Federated Data Valuation: Data Valuation and Detection in Federated Learning
 
-![Federated Data Valuation Banner](https://user-images.githubusercontent.com/dzagardo/federated-data-valuation/banner.png)
+![Federated Data Valuation Banner](https://user-images.githubusercontent.com/datanovatrust/federated-data-valuation/banner.png)
 
 Welcome to **Federated Data Valuation**, a federated learning framework that implements the methods proposed in the paper:
 
@@ -68,7 +68,7 @@ Ensure you have the following installed:
 1. **Clone the repository**
 
    ```bash
-   git clone https://github.com/dzagardo/federated-data-valuation.git
+   git clone https://github.com/datanovatrust/federated-data-valuation.git
    cd federated-data-valuation
    ```
 
