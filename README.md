@@ -252,7 +252,7 @@ We thank the authors for their valuable contributions to the field.
 
 Feel free to reach out for any inquiries or support.
 
-- Email: your.email@example.com
+- Email: dave@greenwillowstudios.com
 - GitHub: [dzagardo](https://github.com/dzagardo)
 
 ---
