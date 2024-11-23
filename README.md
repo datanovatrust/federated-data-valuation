@@ -332,7 +332,7 @@ We've integrated a live monitoring dashboard using **TensorBoard** to visualize 
 1. **Start TensorBoard**
 
    ```bash
-   tensorboard --logdir=runs
+   python -m tensorboard.main --logdir=runs
    ```
 
 2. **Access Dashboard**

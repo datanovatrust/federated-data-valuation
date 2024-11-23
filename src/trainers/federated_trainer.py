@@ -3,6 +3,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader, Subset
+from torch.utils.tensorboard import SummaryWriter  # Import SummaryWriter
 from scipy.stats import wasserstein_distance
 import logging
 import os
@@ -17,7 +18,8 @@ logger.setLevel(logging.DEBUG)  # Set to DEBUG level to capture all logs
 if not logger.handlers:
     console_handler = logging.StreamHandler()
     formatter = logging.Formatter(
-        '%(asctime)s | %(levelname)s | %(message)s', datefmt='%Y-%m-%d %H:%M:%S'
+        '%(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
@@ -33,13 +35,13 @@ class LocalClient:
         self.loader = loader
         self.model = None
 
-
 class FederatedTrainer:
     """
     Trainer class to handle federated training.
     """
 
-    def __init__(self, config, model_class, train_dataset, test_dataset, wasserstein_train_dataset, wasserstein_test_dataset):
+    def __init__(self, config, model_class, train_dataset, test_dataset,
+                 wasserstein_train_dataset, wasserstein_test_dataset):
         self.config = config
         self.model_class = model_class
         self.train_dataset = train_dataset
@@ -68,6 +70,20 @@ class FederatedTrainer:
 
         # Initialize directories
         self.initialize_directories()
+
+        # Initialize TensorBoard SummaryWriter
+        self.writer = SummaryWriter(log_dir='runs')
+
+        # Log training parameters as hyperparameters
+        self.writer.add_hparams({
+            'num_clients': self.num_clients,
+            'batch_size': self.batch_size,
+            'rounds': self.rounds,
+            'epochs': self.epochs,
+            'learning_rate': self.learning_rate,
+            'model_name': self.model_name,
+            'fraction_fit': self.fraction_fit,
+        }, {})
 
         # Log training parameters
         logger.info(f"📝 Training parameters: {self.num_clients} clients, {self.rounds} rounds, {self.epochs} epochs per round")
@@ -133,6 +149,8 @@ class FederatedTrainer:
             dataset = client_datasets[i]
             distance = self.compute_wasserstein_distance_client((client_id, dataset, global_distribution))
             self.client_contributions.append(distance)
+            # Log Wasserstein distance for each client
+            self.writer.add_scalar(f'Client_{client_id}/WassersteinDistance', distance[1], 0)
 
         logger.info("📈 Completed computation of Wasserstein distances")
 
@@ -221,8 +239,8 @@ class FederatedTrainer:
             client.model = self.model_class(num_classes=self.num_classes)
             client.model.to(self.device)
 
-        for round_num in range(self.rounds):
-            logger.info(f"\n🏁 Round {round_num + 1}/{self.rounds} started")
+        for round_num in range(1, self.rounds + 1):
+            logger.info(f"\n🏁 Round {round_num}/{self.rounds} started")
             local_models = []
 
             for client in selected_clients:
@@ -241,7 +259,7 @@ class FederatedTrainer:
                 client.model.train()
                 epoch_loss = 0.0
 
-                for epoch in range(self.epochs):
+                for epoch in range(1, self.epochs + 1):
                     for data, target in client.loader:
                         data = data.to(self.device, non_blocking=True)
                         target = target.to(self.device, non_blocking=True)
@@ -257,7 +275,14 @@ class FederatedTrainer:
                         epoch_loss += loss.item()
 
                     avg_loss = epoch_loss / len(client.loader)
-                    logger.info(f"📚 Client {client.client_id}: Epoch {epoch + 1}/{self.epochs} Loss: {avg_loss:.4f}")
+                    logger.info(f"📚 Client {client.client_id}: Epoch {epoch}/{self.epochs} Loss: {avg_loss:.4f}")
+
+                    # Log training loss for each client
+                    self.writer.add_scalar(
+                        f'Client_{client.client_id}/Train/Loss',
+                        avg_loss,
+                        (round_num - 1) * self.epochs + epoch
+                    )
 
                 local_models.append(client.model.state_dict())
                 logger.info(f"✅ Client {client.client_id}: Training completed")
@@ -269,11 +294,18 @@ class FederatedTrainer:
             # Aggregate models
             logger.info("📥 Aggregating local models...")
             global_model = self.aggregate_models(global_model, local_models)
-            self.save_checkpoint(global_model, round_num + 1)
-            self.evaluate(global_model, test_loader, round_num + 1)
+
+            # Log model weights histograms
+            for name, param in global_model.named_parameters():
+                self.writer.add_histogram(name, param, round_num)
+
+            self.save_checkpoint(global_model, round_num)
+            self.evaluate(global_model, test_loader, round_num)
 
         logger.info("\n🎉 Federated training completed!")
         self.plot_results()
+        # Close the SummaryWriter
+        self.writer.close()
 
     def aggregate_models(self, global_model, local_models):
         avg_state_dict = {}
@@ -308,6 +340,9 @@ class FederatedTrainer:
         accuracy = 100 * correct / total
         self.accuracy_list.append(accuracy)
         logger.info(f"🌟 Accuracy after round {round_num}: {accuracy:.2f}%")
+
+        # Log accuracy to TensorBoard
+        self.writer.add_scalar('GlobalModel/Accuracy', accuracy, round_num)
 
     def plot_results(self):
         logger.info("📊 Plotting client contributions...")
