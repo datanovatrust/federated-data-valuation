@@ -1,7 +1,10 @@
 # src/config/config.yaml
 
+dataset:
+  name: mnist  # Options: 'mnist', 'cifar10', 'custom'
+
 model:
-  name: vit  # Options: 'vit', 'resnet'
+  name: resnet  # Changed from 'vit' to 'resnet'
   num_labels: 10
 
 training:
@@ -12,9 +15,10 @@ training:
 federated_learning:
   num_clients: 5
   rounds: 5
-  fraction_fit: 0.6  # Fraction of clients selected
-  num_shards: 50      # New parameter to partition 100 samples into 50 shards (2 samples per shard)
-  num_samples: 100    # New parameter to limit the dataset size
+  fraction_fit: 0.6
+  num_shards: 50
+  num_samples: 100
+  partition_type: non_iid  # Options: 'iid', 'non_iid'
 
 fedbary:
-  use_validation: true  # Use validation data for global distribution
+  use_validation: true
