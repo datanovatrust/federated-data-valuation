@@ -122,6 +122,12 @@ To start federated training:
 python scripts/train_federated.py
 ```
 
+You can also specify the differential privacy epsilon value via command-line argument:
+
+```bash
+python scripts/train_federated.py --epsilon=10
+```
+
 ### Evaluation
 
 After training, evaluation metrics and plots are saved in the `experiments` directory:
@@ -157,9 +163,17 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 │   ├── config
 │   │   └── config.yaml
 │   ├── models
-│   │   └── model.py
+│   │   ├── image_classifier.py
+│   │   ├── resnet_model.py
+│   │   └── vit_model.py
+│   ├── trainers
+│   │   └── federated_trainer.py
 │   └── utils
-│       └── data_loader.py
+│       ├── data_loader.py
+│       ├── dataset_loader.py
+│       ├── fastDP
+│       │   └── privacy_engine.py
+│       └── partitioner.py
 └── tests
     └── test_model.py
 ```
@@ -246,6 +260,26 @@ This project implements methods from the paper:
 
 We thank the authors for their valuable contributions to the field.
 
+Additionally, we acknowledge the use of the **Fast Differential Privacy** (**fastDP**) library developed by Zhiqi Bu and colleagues, which provides efficient differentially private optimization for PyTorch models.
+
+- **Fast Differential Privacy Library**  
+  [GitHub Repository](https://github.com/awslabs/fast-differential-privacy)
+
+Please consider citing their work:
+
+```
+@inproceedings{bu2023differentially,
+  title={Differentially private optimization on large model at small cost},
+  author={Bu, Zhiqi and Wang, Yu-Xiang and Zha, Sheng and Karypis, George},
+  booktitle={International Conference on Machine Learning},
+  pages={3192--3218},
+  year={2023},
+  organization={PMLR}
+}
+```
+
+We are grateful for their valuable contributions to the field and for making their library available.
+
 ---
 
 ## 📞 Contact
@@ -260,6 +294,8 @@ Feel free to reach out for any inquiries or support.
 ## 📚 References
 
 - Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang. "Data Valuation and Detections in Federated Learning." [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
+- Zhiqi Bu, Yu-Xiang Wang, Sheng Zha, George Karypis. "Differentially private optimization on large model at small cost." In *International Conference on Machine Learning*, pp. 3192–3218. PMLR, 2023.
+- [Fast Differential Privacy Library](https://github.com/awslabs/fast-differential-privacy)
 - [PyTorch Documentation](https://pytorch.org/docs/stable/index.html)
 - [Hugging Face Transformers](https://huggingface.co/transformers/)
 - [Federated Learning Concepts](https://ai.googleblog.com/2017/04/federated-learning-collaborative.html)
@@ -332,7 +368,7 @@ We've integrated a live monitoring dashboard using **TensorBoard** to visualize 
 1. **Start TensorBoard**
 
    ```bash
-   python -m tensorboard.main --logdir=runs
+   tensorboard --logdir=runs
    ```
 
 2. **Access Dashboard**
