@@ -9,6 +9,8 @@ import logging
 import os
 import matplotlib.pyplot as plt
 from multiprocessing import cpu_count
+from sklearn.metrics import confusion_matrix  # Added import
+import seaborn as sns  # Added import
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -394,6 +396,8 @@ class FederatedTrainer:
         model.eval()
         correct = 0
         total = 0
+        all_targets = []
+        all_predictions = []
         with torch.no_grad():
             for data, target in test_loader:
                 data = data.to(self.device, non_blocking=True)
@@ -404,6 +408,8 @@ class FederatedTrainer:
                 _, predicted = torch.max(outputs.data, 1)
                 total += target.size(0)
                 correct += (predicted == target).sum().item()
+                all_targets.extend(target.cpu().numpy())
+                all_predictions.extend(predicted.cpu().numpy())
 
         accuracy = 100 * correct / total
         self.accuracy_list.append(accuracy)
@@ -411,6 +417,24 @@ class FederatedTrainer:
 
         # Log accuracy to TensorBoard
         self.writer.add_scalar('GlobalModel/Accuracy', accuracy, round_num)
+
+        # Save confusion matrix
+        self.plot_confusion_matrix(all_targets, all_predictions, round_num)
+
+    def plot_confusion_matrix(self, true_labels, pred_labels, round_num):
+        logger.info("🖼️ Generating confusion matrix...")
+        try:
+            cm = confusion_matrix(true_labels, pred_labels)
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+            plt.title(f'Confusion Matrix - Round {round_num}')
+            plt.ylabel('True Label')
+            plt.xlabel('Predicted Label')
+            plt.savefig(f'experiments/confusion_matrix_round_{round_num}.png')
+            plt.close()
+            logger.info(f"🖼️ Saved confusion matrix plot to 'experiments/confusion_matrix_round_{round_num}.png'")
+        except Exception as e:
+            logger.error(f"Failed to generate confusion matrix: {e}")
 
     def plot_results(self):
         logger.info("📊 Plotting client contributions...")

@@ -134,6 +134,7 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 
 - **Client Contributions Plot**: `experiments/client_contributions.png`
 - **Training Accuracy Plot**: `experiments/training_accuracy.png`
+- **Confusion Matrix**: `experiments/confusion_matrix_round_{round_num}.png` (One for each round)
 
 ---
 
@@ -357,7 +358,7 @@ sns.heatmap(cm, annot=True)
 plt.savefig('experiments/confusion_matrix.png')
 ```
 
-![Confusion Matrix](experiments/confusion_matrix.png)
+![Confusion Matrix](experiments/confusion_matrix_round_5.png)
 
 ## 🌟 Live Monitoring Dashboard
 
