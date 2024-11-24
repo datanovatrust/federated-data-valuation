@@ -3,7 +3,7 @@
 import torch
 import numpy as np
 from torch.utils.data import DataLoader, Subset
-from torch.utils.tensorboard import SummaryWriter  # Import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 from scipy.stats import wasserstein_distance
 import logging
 import os
@@ -24,16 +24,21 @@ if not logger.handlers:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
+# Import the PrivacyEngine from FastDP
+from src.utils.fastDP.privacy_engine import PrivacyEngine
+
 class LocalClient:
     """
     Represents a local client in federated learning.
     """
 
-    def __init__(self, client_id, dataset, loader):
+    def __init__(self, client_id, dataset, loader, model=None, optimizer=None, privacy_engine=None):
         self.client_id = client_id
         self.dataset = dataset
         self.loader = loader
-        self.model = None
+        self.model = model
+        self.optimizer = optimizer
+        self.privacy_engine = privacy_engine
 
 class FederatedTrainer:
     """
@@ -41,7 +46,7 @@ class FederatedTrainer:
     """
 
     def __init__(self, config, model_class, train_dataset, test_dataset,
-                 wasserstein_train_dataset, wasserstein_test_dataset):
+                 wasserstein_train_dataset, wasserstein_test_dataset, target_epsilon=None):
         self.config = config
         self.model_class = model_class
         self.train_dataset = train_dataset
@@ -85,9 +90,19 @@ class FederatedTrainer:
             'fraction_fit': self.fraction_fit,
         }, {})
 
+        # Differential Privacy parameters
+        self.target_epsilon = target_epsilon
+        self.use_dp = self.target_epsilon is not None
+
         # Log training parameters
         logger.info(f"📝 Training parameters: {self.num_clients} clients, {self.rounds} rounds, {self.epochs} epochs per round")
         logger.info(f"Batch size: {self.batch_size}, Learning rate: {self.learning_rate}")
+
+        # Logging to indicate the training mode
+        if self.use_dp:
+            logger.info(f"🔒 Differential Privacy enabled with epsilon={self.target_epsilon}")
+        else:
+            logger.info("🚀 Training with standard Federated Learning")
 
     def initialize_directories(self):
         os.makedirs('logs', exist_ok=True)
@@ -116,15 +131,15 @@ class FederatedTrainer:
             # Create a Subset of the training dataset with these indices
             client_training_dataset = Subset(self.train_dataset, indices)
             client_training_datasets.append(client_training_dataset)
-        client_loaders = [
-            DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
-            for dataset in client_training_datasets
-        ]
+
         # Initialize local clients
-        self.clients = [
-            LocalClient(client_id=i, dataset=client_training_datasets[i], loader=client_loaders[i])
-            for i in range(self.num_clients)
-        ]
+        self.clients = []
+        for i, dataset in enumerate(client_training_datasets):
+            client_batch_size = min(self.batch_size, len(dataset))
+            loader = DataLoader(dataset, batch_size=client_batch_size, shuffle=True)
+            client = LocalClient(client_id=i, dataset=dataset, loader=loader)
+            self.clients.append(client)
+
         logger.info("👥 Local clients set up successfully.")
 
     def prepare_global_distribution(self):
@@ -216,6 +231,20 @@ class FederatedTrainer:
         logger.info(f"🧠 Global model '{self.model_name}' initialized on device: {self.device}")
         return global_model
 
+    def setup_privacy_engine(self, client, optimizer, batch_size):
+        # Initialize the PrivacyEngine with the required parameters
+        privacy_engine = PrivacyEngine(
+            module=client.model,
+            batch_size=batch_size,
+            sample_size=len(client.dataset),
+            epochs=self.epochs * self.rounds,  # Total epochs over all rounds
+            target_epsilon=self.target_epsilon,
+            target_delta=1 / (2 * len(client.dataset)),  # Default delta value
+        )
+        # Attach the privacy engine to the optimizer
+        privacy_engine.attach(optimizer)
+        return privacy_engine
+
     def train(self):
         logger.info("🚀 Starting federated training...")
         self.partition_data()
@@ -234,10 +263,24 @@ class FederatedTrainer:
         )
         logger.info("✅ Test DataLoader prepared.")
 
-        # Initialize client models once
+        # Initialize client models and optimizers once
         for client in self.clients:
             client.model = self.model_class(num_classes=self.num_classes)
             client.model.to(self.device)
+
+            # Initialize the optimizer
+            client.optimizer = torch.optim.Adam(client.model.parameters(), lr=self.learning_rate)
+
+            # Set up the PrivacyEngine if differential privacy is enabled
+            if self.use_dp:
+                client_batch_size = min(self.batch_size, len(client.dataset))
+                client.privacy_engine = self.setup_privacy_engine(client, client.optimizer, client_batch_size)
+
+        # Log whether DP is being used
+        if self.use_dp:
+            logger.info(f"🔒 Training with Differential Privacy (epsilon={self.target_epsilon})")
+        else:
+            logger.info("🚀 Training with standard Federated Learning")
 
         for round_num in range(1, self.rounds + 1):
             logger.info(f"\n🏁 Round {round_num}/{self.rounds} started")
@@ -248,29 +291,43 @@ class FederatedTrainer:
                     logger.warning(f"🔄 Client {client.client_id} has no data to train.")
                     continue
 
+                client_batch_size = min(self.batch_size, len(client.dataset))
+
+                # Update the client's DataLoader with the adjusted batch size
+                client.loader = DataLoader(
+                    client.dataset,
+                    batch_size=client_batch_size,
+                    shuffle=True
+                )
+
                 logger.info(f"🔄 Client {client.client_id}: Training started")
                 # Load the global model state into the client's model
                 client.model.load_state_dict(global_model.state_dict())
 
-                # Training code remains the same
-                loss_fn = torch.nn.CrossEntropyLoss()
-                optimizer = torch.optim.Adam(client.model.parameters(), lr=self.learning_rate)
-
                 client.model.train()
                 epoch_loss = 0.0
+
+                loss_fn = torch.nn.CrossEntropyLoss()
+
+                # Re-initialize optimizer after loading new model weights
+                client.optimizer = torch.optim.Adam(client.model.parameters(), lr=self.learning_rate)
+
+                # Re-attach privacy engine to optimizer
+                if self.use_dp:
+                    client.privacy_engine.attach(client.optimizer)
 
                 for epoch in range(1, self.epochs + 1):
                     for data, target in client.loader:
                         data = data.to(self.device, non_blocking=True)
                         target = target.to(self.device, non_blocking=True)
 
-                        optimizer.zero_grad()
+                        client.optimizer.zero_grad()
                         output = client.model(data)
                         if hasattr(output, 'logits'):
                             output = output.logits
                         loss = loss_fn(output, target)
                         loss.backward()
-                        optimizer.step()
+                        client.optimizer.step()
 
                         epoch_loss += loss.item()
 
@@ -306,6 +363,17 @@ class FederatedTrainer:
         self.plot_results()
         # Close the SummaryWriter
         self.writer.close()
+
+        # Report privacy spent for each client
+        if self.use_dp:
+            for client in selected_clients:
+                epsilon_spent = client.privacy_engine.get_privacy_spent()
+                logger.info(f"🔒 Client {client.client_id} privacy spent: {epsilon_spent}")
+
+            # Detach privacy engine after training
+            for client in self.clients:
+                if client.privacy_engine is not None:
+                    client.privacy_engine.detach()
 
     def aggregate_models(self, global_model, local_models):
         avg_state_dict = {}

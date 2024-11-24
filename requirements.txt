@@ -12,3 +12,13 @@ pytest
 syft
 scipy
 POT
+prv-accountant
+scipy
+pydantic
+opt_einsum
+ml-swissknife
+fairscale
+tqdm
+deepspeed
+jupyter
+jupyterlab

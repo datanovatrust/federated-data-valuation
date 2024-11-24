@@ -14,6 +14,7 @@ from src.utils.dataset_loader import DatasetLoader
 import yaml
 import logging
 from torchvision import transforms
+import argparse  # Added argparse import
 
 # ----------------- Logging Configuration -----------------
 
@@ -49,6 +50,26 @@ if not logger.handlers:
 def main():
     logger.info("🚀 Starting the Federated Training Script")
     try:
+        # Parse command-line arguments
+        parser = argparse.ArgumentParser(description='Federated Learning Training Script')
+        parser.add_argument('--epsilon', type=float, default=None,
+                            help='Target epsilon for differential privacy (default: None)')
+        args = parser.parse_args()
+
+        # Hardcoded epsilon value
+        hardcoded_epsilon = None  # Set to None if you don't want to hardcode
+
+        # Determine the epsilon value to use
+        if args.epsilon is not None:
+            epsilon = args.epsilon
+            logger.info(f"🔧 Epsilon value provided via command-line argument: epsilon={epsilon}")
+        else:
+            epsilon = hardcoded_epsilon
+            if epsilon is not None:
+                logger.info(f"🔧 Using hardcoded epsilon value: epsilon={epsilon}")
+            else:
+                logger.info("🔧 No epsilon value provided; proceeding without Differential Privacy")
+
         # Load configuration
         logger.info("🔧 Loading configuration...")
         with open('src/config/config.yaml', 'r') as f:
@@ -106,16 +127,21 @@ def main():
         logger.info(f"Model class '{model_class.__name__}' initialized.")
 
         # Initialize FederatedTrainer
-        logger.info("🏋️ Initializing FederatedTrainer...")
         trainer = FederatedTrainer(
             config=config,
             model_class=model_class,
             train_dataset=train_dataset,
             test_dataset=test_dataset,
             wasserstein_train_dataset=wasserstein_train_dataset,
-            wasserstein_test_dataset=wasserstein_test_dataset
+            wasserstein_test_dataset=wasserstein_test_dataset,
+            target_epsilon=epsilon  # Use the determined epsilon value
         )
-        logger.info("FederatedTrainer initialized.")
+
+        # Log the epsilon value from the FederatedTrainer instance
+        if trainer.target_epsilon is not None:
+            logger.info(f"🏋️ Initializing FederatedTrainer with epsilon={trainer.target_epsilon}...")
+        else:
+            logger.info("🏋️ Initializing FederatedTrainer without Differential Privacy...")
 
         # Start training
         logger.info("🎯 Starting training...")
