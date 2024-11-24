@@ -1,6 +1,6 @@
 # 🛡️ Federated Data Valuation: Data Valuation and Detection in Federated Learning
 
-![Federated Data Valuation Banner](https://user-images.githubusercontent.com/datanovatrust/federated-data-valuation/banner.png)
+![Federated Data Valuation Banner](banner.svg)
 
 Welcome to **Federated Data Valuation**, a federated learning framework that implements the methods proposed in the paper:
 

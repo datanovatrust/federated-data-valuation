@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320">
+  <!-- Enhanced gradient definitions -->
+  <defs>
+    <linearGradient id="cyberbg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a192f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#172a45;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="neonBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00f7ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4a9eff;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="neonGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00ff88;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00ffd5;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="neonPurple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff00ff;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#b14cff;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Binary pattern -->
+    <pattern id="binaryPattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+      <text x="10" y="20" fill="#ffffff" opacity="0.1" font-family="monospace" font-size="10">10110101</text>
+      <text x="30" y="40" fill="#ffffff" opacity="0.1" font-family="monospace" font-size="10">01001101</text>
+      <text x="50" y="60" fill="#ffffff" opacity="0.1" font-family="monospace" font-size="10">11100111</text>
+      <text x="20" y="80" fill="#ffffff" opacity="0.1" font-family="monospace" font-size="10">00110110</text>
+    </pattern>
+  </defs>
+
+  <!-- Background layers -->
+  <rect width="1280" height="320" fill="url(#cyberbg)"/>
+  <rect width="1280" height="320" fill="url(#binaryPattern)"/>
+  
+  <!-- Enhanced grid with diagonal lines -->
+  <g opacity="0.1">
+    <pattern id="smallGrid" width="30" height="30" patternUnits="userSpaceOnUse">
+      <path d="M 30 0 L 0 0 0 30" fill="none" stroke="#8892b0" stroke-width="0.5"/>
+      <path d="M 0 0 L 30 30" fill="none" stroke="#8892b0" stroke-width="0.25"/>
+    </pattern>
+    <rect width="1280" height="320" fill="url(#smallGrid)"/>
+  </g>
+
+  <!-- Floating particles -->
+  <g>
+    <circle cx="100" cy="50" r="1" fill="#64ffda" opacity="0.6">
+      <animate attributeName="cy" from="50" to="270" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="300" cy="150" r="1" fill="#64ffda" opacity="0.6">
+      <animate attributeName="cy" from="150" to="320" dur="4s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="900" cy="200" r="1" fill="#64ffda" opacity="0.6">
+      <animate attributeName="cy" from="200" to="0" dur="5s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1100" cy="100" r="1" fill="#64ffda" opacity="0.6">
+      <animate attributeName="cy" from="100" to="320" dur="3.5s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Abstract circuit patterns with animation -->
+  <g stroke="url(#neonBlue)" stroke-width="0.5" opacity="0.3">
+    <path d="M0 50 L1280 50">
+      <animate attributeName="stroke-dashoffset" from="0" to="1280" dur="20s" repeatCount="indefinite"/>
+    </path>
+    <path d="M0 150 L1280 150">
+      <animate attributeName="stroke-dashoffset" from="1280" to="0" dur="15s" repeatCount="indefinite"/>
+    </path>
+    <path d="M0 250 L1280 250">
+      <animate attributeName="stroke-dashoffset" from="0" to="1280" dur="18s" repeatCount="indefinite"/>
+    </path>
+    <path d="M100 0 L100 320"/>
+    <path d="M500 0 L500 320"/>
+    <path d="M900 0 L900 320"/>
+  </g>
+
+  <!-- Background hexagons -->
+  <g opacity="0.1">
+    <path d="M50,160 L90,140 L90,180 L50,200 L10,180 L10,140 Z" stroke="#4a9eff" fill="none"/>
+    <path d="M1230,160 L1270,140 L1270,180 L1230,200 L1190,180 L1190,140 Z" stroke="#4a9eff" fill="none"/>
+    <path d="M640,40 L680,20 L680,60 L640,80 L600,60 L600,20 Z" stroke="#4a9eff" fill="none"/>
+    <path d="M640,280 L680,260 L680,300 L640,320 L600,300 L600,260 Z" stroke="#4a9eff" fill="none"/>
+  </g>
+
+  <!-- Data flow lines in background -->
+  <g stroke="url(#neonBlue)" stroke-width="1" opacity="0.2">
+    <path d="M0,0 Q640,100 1280,0">
+      <animate attributeName="d" 
+               values="M0,0 Q640,100 1280,0;M0,0 Q640,150 1280,0;M0,0 Q640,100 1280,0" 
+               dur="5s" repeatCount="indefinite"/>
+    </path>
+    <path d="M0,320 Q640,220 1280,320">
+      <animate attributeName="d" 
+               values="M0,320 Q640,220 1280,320;M0,320 Q640,170 1280,320;M0,320 Q640,220 1280,320" 
+               dur="5s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- Original content -->
+  <!-- Connected nodes representing federated learning (enhanced) -->
+  <g transform="translate(200,160)">
+    <!-- Central node with glow -->
+    <circle cx="0" cy="0" r="35" fill="url(#neonBlue)" opacity="0.3"/>
+    <circle cx="0" cy="0" r="30" fill="url(#neonBlue)"/>
+    <circle cx="0" cy="0" r="25" fill="#0a192f"/>
+    <circle cx="0" cy="0" r="20" fill="url(#neonBlue)" opacity="0.5"/>
+    
+    <!-- Satellite nodes with data flow animation -->
+    <g id="satellites">
+      <g transform="rotate(0)">
+        <line x1="40" y1="0" x2="120" y2="0" stroke="url(#neonBlue)" stroke-width="3">
+          <animate attributeName="stroke-dashoffset" from="0" to="20" dur="2s" repeatCount="indefinite"/>
+        </line>
+        <circle cx="150" cy="0" r="20" fill="url(#neonBlue)"/>
+        <circle cx="150" cy="0" r="15" fill="#0a192f"/>
+      </g>
+      <g transform="rotate(72)">
+        <line x1="40" y1="0" x2="120" y2="0" stroke="url(#neonBlue)" stroke-width="3"/>
+        <circle cx="150" cy="0" r="20" fill="url(#neonBlue)"/>
+        <circle cx="150" cy="0" r="15" fill="#0a192f"/>
+      </g>
+      <g transform="rotate(144)">
+        <line x1="40" y1="0" x2="120" y2="0" stroke="url(#neonBlue)" stroke-width="3"/>
+        <circle cx="150" cy="0" r="20" fill="url(#neonBlue)"/>
+        <circle cx="150" cy="0" r="15" fill="#0a192f"/>
+      </g>
+      <g transform="rotate(216)">
+        <line x1="40" y1="0" x2="120" y2="0" stroke="url(#neonBlue)" stroke-width="3"/>
+        <circle cx="150" cy="0" r="20" fill="url(#neonBlue)"/>
+        <circle cx="150" cy="0" r="15" fill="#0a192f"/>
+      </g>
+      <g transform="rotate(288)">
+        <line x1="40" y1="0" x2="120" y2="0" stroke="url(#neonBlue)" stroke-width="3"/>
+        <circle cx="150" cy="0" r="20" fill="url(#neonBlue)"/>
+        <circle cx="150" cy="0" r="15" fill="#0a192f"/>
+      </g>
+    </g>
+  </g>
+  
+  <!-- Holographic data valuation visualization -->
+  <g transform="translate(700,160)">
+    <!-- Animated bar chart -->
+    <g opacity="0.9">
+      <rect x="0" y="-60" width="30" height="60" fill="url(#neonGreen)">
+        <animate attributeName="height" values="60;65;60" dur="2s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="40" y="-40" width="30" height="40" fill="url(#neonGreen)">
+        <animate attributeName="height" values="40;45;40" dur="2.5s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="80" y="-80" width="30" height="80" fill="url(#neonGreen)">
+        <animate attributeName="height" values="80;85;80" dur="1.8s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="120" y="-30" width="30" height="30" fill="url(#neonGreen)">
+        <animate attributeName="height" values="30;35;30" dur="2.2s" repeatCount="indefinite"/>
+      </rect>
+      <rect x="160" y="-70" width="30" height="70" fill="url(#neonGreen)">
+        <animate attributeName="height" values="70;75;70" dur="2.3s" repeatCount="indefinite"/>
+      </rect>
+    </g>
+  </g>
+  
+  <!-- Futuristic privacy shield -->
+  <g transform="translate(1000,160)">
+    <path d="M0,-60 L60,-30 L60,30 L0,60 L-60,30 L-60,-30 Z" 
+          fill="none" stroke="url(#neonPurple)" stroke-width="4">
+      <animate attributeName="stroke-dasharray" values="0,1000;1000,0" dur="3s" repeatCount="indefinite"/>
+    </path>
+    <path d="M0,-40 L40,-20 L40,20 L0,40 L-40,20 L-40,-20 Z" 
+          fill="url(#neonPurple)" opacity="0.3"/>
+    <circle cx="0" cy="0" r="15" fill="url(#neonPurple)">
+      <animate attributeName="r" values="15;17;15" dur="2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Title text with glow effect -->
+  <g>
+    <text x="640" y="260" 
+          font-family="'Courier New', monospace" 
+          font-size="28" 
+          fill="#ffffff" 
+          text-anchor="middle" 
+          font-weight="bold">
+      FEDERATED DATA VALUATION
+    </text>
+    
+    <!-- Subtitle with tech font -->
+    <text x="640" y="290" 
+          font-family="'Courier New', monospace" 
+          font-size="16" 
+          fill="#64ffda" 
+          text-anchor="middle">
+      PRIVACY-PRESERVING • DATA VALUATION • FEDERATED LEARNING
+    </text>
+  </g>
+
+  <!-- Enhanced decorative elements -->
+  <g opacity="0.5">
+    <circle cx="50" cy="50" r="2" fill="#64ffda"/>
+    <circle cx="1230" cy="50" r="2" fill="#64ffda"/>
+    <circle cx="50" cy="270" r="2" fill="#64ffda"/>
+    <circle cx="1230" cy="270" r="2" fill="#64ffda"/>
+  </g>
+</svg>
