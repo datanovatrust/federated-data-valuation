@@ -1,22 +1,23 @@
 # src/models/resnet_model.py
 
-import torch
 import torch.nn as nn
 from torchvision import models
 from torchvision.models.resnet import ResNet18_Weights
 import logging
+from .base_model import BaseModel
+import torch.nn.functional as F
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-class ResNetModel(nn.Module):
+class ResNetModel(BaseModel):
     def __init__(self, num_classes=10):
-        super(ResNetModel, self).__init__()
+        super(ResNetModel, self).__init__(num_classes)
         # Use the updated way to load pretrained weights
         self.model = models.resnet18(weights=ResNet18_Weights.DEFAULT)
         # Modify the first convolutional layer to accept 1-channel input
         self.model.conv1 = nn.Conv2d(
-            in_channels=1,  # Change from 3 to 1
+            in_channels=1,  # Change from 3 to 1 for MNIST
             out_channels=64,
             kernel_size=7,
             stride=2,

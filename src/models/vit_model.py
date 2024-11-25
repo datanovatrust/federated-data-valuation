@@ -3,10 +3,10 @@
 from transformers import ViTForImageClassification
 from .base_model import BaseModel
 import logging
+import torch.nn.functional as F
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
 
 class ViTModel(BaseModel):
     """
@@ -26,4 +26,6 @@ class ViTModel(BaseModel):
             raise
 
     def forward(self, x):
-        return self.model(x)
+        outputs = self.model(x)
+        logits = outputs.logits  # ViTForImageClassification returns an object with logits
+        return logits

@@ -1,7 +1,9 @@
 # src/models/base_model.py
 
 import torch.nn as nn
+import torch.nn.functional as F
 import logging
+import torch
 
 # Configure logging for models
 logger = logging.getLogger(__name__)
@@ -15,7 +17,6 @@ if not logger.handlers:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-
 class BaseModel(nn.Module):
     """
     Base class for models.
@@ -28,10 +29,12 @@ class BaseModel(nn.Module):
     def forward(self, x):
         raise NotImplementedError("Subclasses should implement this method.")
 
-    @staticmethod
-    def load_pretrained_weights(model, model_name):
+    def predict_proba(self, x):
         """
-        Load pretrained weights for the model if available.
+        Computes class probabilities for input x.
         """
-        # This method can be overridden by subclasses if needed
-        pass
+        self.eval()
+        with torch.no_grad():
+            outputs = self(x)
+            probabilities = F.softmax(outputs, dim=1)
+        return probabilities
