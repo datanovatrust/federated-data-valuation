@@ -3,7 +3,7 @@
 import os
 import torch
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, TensorDataset
 import numpy as np
 from PIL import Image
 import pandas as pd
@@ -55,27 +55,44 @@ def get_mnist_datasets(transform=None):
 def partition_dataset_non_iid(train_dataset, num_clients, num_shards=200):
     """
     Partition the dataset into non-IID subsets for each client.
-    
+
     Parameters:
     - train_dataset: PyTorch dataset object or Subset thereof.
     - num_clients: Number of clients.
     - num_shards: Total number of shards to divide the data into.
-    
+
     Returns:
     - List of Subset objects, each corresponding to a client's data.
     """
     try:
+        # Input validation
+        if num_clients <= 0:
+            logger.error("Number of clients must be a positive integer.")
+            raise ValueError("Number of clients must be greater than zero.")
+        if num_shards <= 0:
+            logger.error("Number of shards must be a positive integer.")
+            raise ValueError("Number of shards must be greater than zero.")
+
         num_samples = len(train_dataset)
-        
-        # Access labels appropriately based on whether train_dataset is a Subset
+
+        # Access labels appropriately based on the dataset type
         if isinstance(train_dataset, Subset):
             # If it's a Subset, access the underlying dataset and use the subset indices
-            labels = np.array(train_dataset.dataset.targets)[train_dataset.indices]
+            full_dataset = train_dataset.dataset
             indices = np.array(train_dataset.indices)
         else:
-            # If it's a full dataset, access targets directly
-            labels = train_dataset.targets.numpy() if isinstance(train_dataset.targets, torch.Tensor) else np.array(train_dataset.targets)
+            full_dataset = train_dataset
             indices = np.arange(num_samples)
+
+        # Extract labels from the dataset
+        if hasattr(full_dataset, 'targets'):
+            labels = np.array(full_dataset.targets)[indices]
+        elif isinstance(full_dataset, TensorDataset):
+            # Assuming labels are the second element in the dataset
+            labels = full_dataset.tensors[1][indices].numpy()
+        else:
+            logger.error("The dataset does not have a targets attribute or is not a TensorDataset.")
+            raise AttributeError("Dataset must have a 'targets' attribute or be a TensorDataset.")
 
         # Sort indices by label to create shards with similar labels
         indices_labels = np.vstack((indices, labels))
@@ -90,7 +107,7 @@ def partition_dataset_non_iid(train_dataset, num_clients, num_shards=200):
 
         # Create shards
         shards = [sorted_indices[i * shard_size:(i + 1) * shard_size] for i in range(num_shards)]
-        
+
         # Handle any remaining samples by adding them to the last shard
         remaining = num_samples % num_shards
         if remaining > 0:
@@ -105,13 +122,13 @@ def partition_dataset_non_iid(train_dataset, num_clients, num_shards=200):
         if shards_per_client == 0:
             logger.error("Number of clients exceeds number of shards.")
             raise ValueError("Too many clients for the number of shards.")
-        
+
         client_indices = []
         for i in range(num_clients):
             assigned_shards = shards[i * shards_per_client:(i + 1) * shards_per_client]
             client_idx = np.concatenate(assigned_shards, axis=0)
             client_indices.append(client_idx)
-        
+
         # Handle any remaining shards by distributing them one by one to the clients
         remaining_shards = shards[num_clients * shards_per_client:]
         for i, shard in enumerate(remaining_shards):
@@ -123,13 +140,9 @@ def partition_dataset_non_iid(train_dataset, num_clients, num_shards=200):
         for idx in client_indices:
             if len(idx) == 0:
                 logger.warning("A client has been assigned an empty dataset.")
-                client_subset = Subset(train_dataset.dataset, []) if isinstance(train_dataset, Subset) else Subset(train_dataset, [])
+                client_subset = Subset(full_dataset, [])
             else:
-                if isinstance(train_dataset, Subset):
-                    # If train_dataset is a Subset, create a new Subset with the same underlying dataset
-                    client_subset = Subset(train_dataset.dataset, idx)
-                else:
-                    client_subset = Subset(train_dataset, idx)
+                client_subset = Subset(full_dataset, idx)
             client_datasets.append(client_subset)
 
         logger.info("Data partitioned among clients successfully.")
@@ -152,15 +165,18 @@ def load_custom_dataset(data_dir, file_type='jpg', transform=None):
     """
     try:
         if file_type in ['jpg', 'png']:
-            # Load images
+            # Ensure a default transform is applied to convert images to tensors
+            if transform is None:
+                transform = transforms.Compose([
+                    transforms.ToTensor()
+                ])
             images = []
             labels = []
             for img_file in os.listdir(data_dir):
                 if img_file.lower().endswith(file_type):
                     try:
                         image = Image.open(os.path.join(data_dir, img_file)).convert('RGB')
-                        if transform is not None:
-                            image = transform(image)
+                        image = transform(image)
                         images.append(image)
                         # Extract label from filename or a separate label file
                         labels.append(extract_label(img_file))
@@ -169,7 +185,7 @@ def load_custom_dataset(data_dir, file_type='jpg', transform=None):
             if len(images) == 0:
                 logger.error("No images loaded. Please check the data directory and file types.")
                 raise ValueError("Empty image dataset.")
-            dataset = torch.utils.data.TensorDataset(torch.stack(images), torch.tensor(labels))
+            dataset = torch.utils.data.TensorDataset(torch.stack(images), torch.tensor(labels, dtype=torch.long))
             logger.info("Custom image dataset loaded successfully.")
             return dataset
         elif file_type == 'csv':
@@ -180,7 +196,14 @@ def load_custom_dataset(data_dir, file_type='jpg', transform=None):
                 raise ValueError("Missing 'label' column in CSV.")
             labels = data['label'].values
             features = data.drop('label', axis=1).values
-            dataset = torch.utils.data.TensorDataset(torch.tensor(features, dtype=torch.float32), torch.tensor(labels))
+            # Handle empty dataset
+            if features.size == 0 or labels.size == 0:
+                logger.error("CSV file is empty.")
+                raise ValueError("Empty CSV dataset.")
+            dataset = torch.utils.data.TensorDataset(
+                torch.tensor(features, dtype=torch.float32),
+                torch.tensor(labels, dtype=torch.long)
+            )
             logger.info("Custom CSV dataset loaded successfully.")
             return dataset
         else:
@@ -189,6 +212,7 @@ def load_custom_dataset(data_dir, file_type='jpg', transform=None):
     except Exception as e:
         logger.error(f"Failed to load custom dataset: {e}")
         raise
+
 
 def extract_label(img_file):
     """

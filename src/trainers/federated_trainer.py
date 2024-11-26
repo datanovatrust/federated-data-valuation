@@ -9,12 +9,13 @@ import logging
 import os
 import matplotlib.pyplot as plt
 from multiprocessing import cpu_count
-from sklearn.metrics import confusion_matrix  # Added import
-import seaborn as sns  # Added import
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+import copy
 
 # Configure logging
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)  # Set to DEBUG level to capture all logs
+logger.setLevel(logging.DEBUG)
 
 # Create handlers if they don't exist
 if not logger.handlers:
@@ -27,7 +28,11 @@ if not logger.handlers:
     logger.addHandler(console_handler)
 
 # Import the PrivacyEngine from FastDP
-from src.utils.fastDP.privacy_engine import PrivacyEngine
+try:
+    from src.utils.fastDP.privacy_engine import PrivacyEngine
+except ImportError:
+    logger.warning("PrivacyEngine not found. Differential Privacy will not be available.")
+    PrivacyEngine = None
 
 class LocalClient:
     """
@@ -70,6 +75,11 @@ class FederatedTrainer:
         self.num_shards = int(self.config['federated_learning'].get('num_shards', 50))
         self.num_classes = int(self.config['model']['num_labels'])
 
+        # Validate num_clients
+        if self.num_clients <= 0:
+            logger.error("Number of clients must be greater than zero.")
+            raise ValueError("Invalid number of clients.")
+
         # Clients and data loaders
         self.clients = []
         self.client_contributions = []
@@ -94,7 +104,7 @@ class FederatedTrainer:
 
         # Differential Privacy parameters
         self.target_epsilon = target_epsilon
-        self.use_dp = self.target_epsilon is not None
+        self.use_dp = self.target_epsilon is not None and PrivacyEngine is not None
 
         # Log training parameters
         logger.info(f"📝 Training parameters: {self.num_clients} clients, {self.rounds} rounds, {self.epochs} epochs per round")
@@ -114,10 +124,10 @@ class FederatedTrainer:
     def partition_data(self):
         from src.utils.partitioner import DataPartitioner
 
-        logger.info("🔄 Partitioning data among clients (non-IID)...")
+        logger.info("🔄 Partitioning data among clients...")
 
         partitioner = DataPartitioner(
-            self.wasserstein_train_dataset,  # Use the Wasserstein dataset for partitioning
+            self.wasserstein_train_dataset,
             self.num_clients,
             partition_type=self.config['federated_learning'].get('partition_type', 'non_iid'),
             num_shards=self.num_shards
@@ -128,24 +138,25 @@ class FederatedTrainer:
         # Create corresponding datasets for training
         client_training_datasets = []
         for client_dataset in client_datasets:
-            # Get indices from the Wasserstein dataset
             indices = client_dataset.indices if isinstance(client_dataset, Subset) else list(range(len(client_dataset)))
-            # Create a Subset of the training dataset with these indices
             client_training_dataset = Subset(self.train_dataset, indices)
             client_training_datasets.append(client_training_dataset)
 
         # Initialize local clients
         self.clients = []
         for i, dataset in enumerate(client_training_datasets):
-            client_batch_size = min(self.batch_size, len(dataset))
-            loader = DataLoader(dataset, batch_size=client_batch_size, shuffle=True)
+            client_batch_size = min(self.batch_size, len(dataset)) if len(dataset) > 0 else self.batch_size
+            shuffle = len(dataset) > 0  # Only shuffle if dataset is not empty
+            loader = DataLoader(dataset, batch_size=client_batch_size, shuffle=shuffle)
             client = LocalClient(client_id=i, dataset=dataset, loader=loader)
             self.clients.append(client)
-
         logger.info("👥 Local clients set up successfully.")
 
     def prepare_global_distribution(self):
-        num_test_samples = 1000  # Adjust as needed
+        num_test_samples = min(len(self.wasserstein_test_dataset), 1000)  # Adjust as needed
+        if num_test_samples == 0:
+            logger.error("Wasserstein test dataset is empty.")
+            raise ValueError("Empty Wasserstein test dataset.")
         validation_loader = DataLoader(
             self.wasserstein_test_dataset, batch_size=num_test_samples, shuffle=False
         )
@@ -156,10 +167,8 @@ class FederatedTrainer:
 
     def compute_wasserstein_distances(self, global_distribution):
         logger.info("🔍 Computing Wasserstein distances between client datasets and global distribution...")
-        # Use the Wasserstein datasets for distance computation
         client_datasets = [Subset(self.wasserstein_train_dataset, client.dataset.indices) for client in self.clients]
 
-        # Compute distances without multiprocessing
         self.client_contributions = []
         for i, client in enumerate(self.clients):
             client_id = client.client_id
@@ -187,8 +196,6 @@ class FederatedTrainer:
 
             num_bins = 100
 
-            # To reduce computation, compute distances on a subset of features
-            # For example, randomly select 100 features
             num_features = data.shape[1]
             selected_features = np.random.choice(num_features, size=min(100, num_features), replace=False)
 
@@ -224,26 +231,23 @@ class FederatedTrainer:
         return selected_clients
 
     def initialize_global_model(self):
-        from src.models.image_classifier import ModelFactory
-
-        global_model = ModelFactory.create_model(
-            model_name=self.model_name, num_classes=self.num_classes
-        )
+        global_model = self.model_class(num_classes=self.num_classes)
         global_model.to(self.device)
         logger.info(f"🧠 Global model '{self.model_name}' initialized on device: {self.device}")
         return global_model
 
     def setup_privacy_engine(self, client, optimizer, batch_size):
-        # Initialize the PrivacyEngine with the required parameters
+        if PrivacyEngine is None:
+            logger.error("PrivacyEngine not available.")
+            raise ImportError("PrivacyEngine not available.")
         privacy_engine = PrivacyEngine(
             module=client.model,
             batch_size=batch_size,
             sample_size=len(client.dataset),
-            epochs=self.epochs * self.rounds,  # Total epochs over all rounds
+            epochs=self.epochs * self.rounds,
             target_epsilon=self.target_epsilon,
-            target_delta=1 / (2 * len(client.dataset)),  # Default delta value
+            target_delta=1 / (2 * len(client.dataset)) if len(client.dataset) > 0 else 1e-5,
         )
-        # Attach the privacy engine to the optimizer
         privacy_engine.attach(optimizer)
         return privacy_engine
 
@@ -275,14 +279,12 @@ class FederatedTrainer:
 
             # Set up the PrivacyEngine if differential privacy is enabled
             if self.use_dp:
-                client_batch_size = min(self.batch_size, len(client.dataset))
-                client.privacy_engine = self.setup_privacy_engine(client, client.optimizer, client_batch_size)
-
-        # Log whether DP is being used
-        if self.use_dp:
-            logger.info(f"🔒 Training with Differential Privacy (epsilon={self.target_epsilon})")
-        else:
-            logger.info("🚀 Training with standard Federated Learning")
+                if len(client.dataset) == 0:
+                    logger.warning(f"Client {client.client_id} has no data. Skipping privacy engine setup.")
+                    client.privacy_engine = None
+                else:
+                    client_batch_size = min(self.batch_size, len(client.dataset))
+                    client.privacy_engine = self.setup_privacy_engine(client, client.optimizer, client_batch_size)
 
         for round_num in range(1, self.rounds + 1):
             logger.info(f"\n🏁 Round {round_num}/{self.rounds} started")
@@ -315,7 +317,7 @@ class FederatedTrainer:
                 client.optimizer = torch.optim.Adam(client.model.parameters(), lr=self.learning_rate)
 
                 # Re-attach privacy engine to optimizer
-                if self.use_dp:
+                if self.use_dp and client.privacy_engine is not None:
                     client.privacy_engine.attach(client.optimizer)
 
                 for epoch in range(1, self.epochs + 1):
@@ -369,8 +371,9 @@ class FederatedTrainer:
         # Report privacy spent for each client
         if self.use_dp:
             for client in selected_clients:
-                epsilon_spent = client.privacy_engine.get_privacy_spent()
-                logger.info(f"🔒 Client {client.client_id} privacy spent: {epsilon_spent}")
+                if client.privacy_engine is not None:
+                    epsilon_spent = client.privacy_engine.get_privacy_spent()
+                    logger.info(f"🔒 Client {client.client_id} privacy spent: {epsilon_spent}")
 
             # Detach privacy engine after training
             for client in self.clients:
@@ -411,7 +414,7 @@ class FederatedTrainer:
                 all_targets.extend(target.cpu().numpy())
                 all_predictions.extend(predicted.cpu().numpy())
 
-        accuracy = 100 * correct / total
+        accuracy = 100 * correct / total if total > 0 else 0
         self.accuracy_list.append(accuracy)
         logger.info(f"🌟 Accuracy after round {round_num}: {accuracy:.2f}%")
 
@@ -456,11 +459,11 @@ class FederatedTrainer:
         logger.info("📈 Plotting training accuracy over rounds...")
         try:
             plt.figure(figsize=(10, 6))
-            plt.plot(range(1, self.rounds + 1), self.accuracy_list, marker='o', linestyle='-', color='green')
+            plt.plot(range(1, len(self.accuracy_list) + 1), self.accuracy_list, marker='o', linestyle='-', color='green')
             plt.xlabel('Round')
             plt.ylabel('Accuracy (%)')
             plt.title('Global Model Accuracy Over Rounds')
-            plt.xticks(range(1, self.rounds + 1))
+            plt.xticks(range(1, len(self.accuracy_list) + 1))
             plt.grid(True)
             plt.savefig('experiments/training_accuracy.png')
             plt.close()

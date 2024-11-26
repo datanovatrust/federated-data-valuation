@@ -7,10 +7,18 @@ from torchvision import datasets, transforms
 from torch.utils.data import Dataset
 import pandas as pd
 from PIL import Image
+import numpy as np
 
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
+# Create handlers if they don't exist
+if not logger.handlers:
+    console_handler = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s | %(levelname)s | %(message)s')
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 class DatasetLoader:
     """
@@ -75,13 +83,16 @@ class DatasetLoader:
             raise ValueError("Missing 'data_dir' for custom dataset.")
 
         if file_type in ['jpg', 'png']:
-            return CustomImageDataset(data_dir, file_type, transform=self.transform)
+            dataset = CustomImageDataset(data_dir, file_type, transform=self.transform)
+            logger.info("Custom image dataset loaded successfully.")
+            return dataset
         elif file_type == 'csv':
-            return CustomCSVDataset(data_dir)
+            dataset = CustomCSVDataset(data_dir)
+            logger.info("Custom CSV dataset loaded successfully.")
+            return dataset
         else:
             logger.error(f"Unsupported file type: {file_type}")
             raise ValueError("Unsupported file type.")
-
 
 class CustomImageDataset(Dataset):
     """
@@ -105,6 +116,9 @@ class CustomImageDataset(Dataset):
                     ).convert('RGB')
                     if self.transform:
                         image = self.transform(image)
+                    else:
+                        # Apply a default transform to convert images to tensors
+                        image = transforms.ToTensor()(image)
                     self.images.append(image)
                     label = self.extract_label(img_file)
                     self.labels.append(label)
@@ -114,8 +128,6 @@ class CustomImageDataset(Dataset):
         if not self.images:
             logger.error("No images found in the specified directory.")
             raise ValueError("Empty dataset.")
-
-        logger.info("Custom image dataset loaded successfully.")
 
     def extract_label(self, img_file):
         label_str = img_file.split('_')[0].lower()
@@ -128,7 +140,6 @@ class CustomImageDataset(Dataset):
     def __getitem__(self, idx):
         return self.images[idx], self.labels[idx]
 
-
 class CustomCSVDataset(Dataset):
     """
     Custom dataset class for loading data from a CSV file.
@@ -136,12 +147,25 @@ class CustomCSVDataset(Dataset):
 
     def __init__(self, data_dir):
         self.data_dir = data_dir
-        self.data = pd.read_csv(os.path.join(self.data_dir, 'data.csv'))
+        csv_path = os.path.join(self.data_dir, 'data.csv')
+        if not os.path.isfile(csv_path):
+            logger.error(f"CSV file not found at {csv_path}")
+            raise FileNotFoundError(f"CSV file not found at {csv_path}")
+        self.data = pd.read_csv(csv_path)
         if 'label' not in self.data.columns:
             logger.error("CSV file must contain a 'label' column.")
             raise ValueError("Missing 'label' column in CSV.")
         self.labels = self.data['label'].values
-        self.features = self.data.drop('label', axis=1).values
+        self.features = self.data.drop('label', axis=1)
+        # Ensure features are numeric
+        if not all(self.features.dtypes.apply(lambda x: np.issubdtype(x, np.number))):
+            logger.error("All feature columns must be numeric.")
+            raise ValueError("Non-numeric data found in feature columns.")
+        # Check for empty dataset
+        if len(self.features) == 0 or len(self.labels) == 0:
+            logger.error("CSV file is empty.")
+            raise ValueError("Empty CSV dataset.")
+        self.features = self.features.values.astype(np.float32)
         logger.info("Custom CSV dataset loaded successfully.")
 
     def __len__(self):
