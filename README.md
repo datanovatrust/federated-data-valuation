@@ -141,42 +141,93 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 ## 📁 Project Structure
 
 ```bash
-.
+federated-data-valuation
 ├── Dockerfile
 ├── README.md
+├── banner.svg
 ├── checkpoints
-│   └── ...  # Model checkpoints
+│   └── ...
 ├── data
-│   └── MNIST
-│       └── ...  # MNIST dataset
+│   ├── MNIST
+│   │   └── raw
+│   │       └── ...
+│   ├── cifar-10-batches-py
+│   │   └── ...
+│   └── cifar-10-python.tar.gz
 ├── docs
 ├── experiments
 │   ├── client_contributions.png
+│   ├── confusion_matrix_round_1.png
+│   ├── confusion_matrix_round_2.png
+│   ├── confusion_matrix_round_3.png
+│   ├── confusion_matrix_round_4.png
+│   ├── confusion_matrix_round_5.png
+│   ├── rmia_roc_curve.png
 │   └── training_accuracy.png
 ├── logs
-│   └── federated_training.log
+│   ├── federated_training.log
+│   └── rmia_attack.log
 ├── notebooks
 │   └── federated_training.ipynb
 ├── requirements.txt
 ├── scripts
+│   ├── run_rmia_attack.py
 │   └── train_federated.py
 ├── src
+│   ├── attacks
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── data_sampler.py
+│   │   ├── evaluation_metrics.py
+│   │   ├── reference_model_manager.py
+│   │   ├── rmia_attack.py
+│   │   └── statistical_tests.py
 │   ├── config
 │   │   └── config.yaml
 │   ├── models
+│   │   ├── __init__.py
+│   │   ├── base_model.py
 │   │   ├── image_classifier.py
+│   │   ├── model.py
 │   │   ├── resnet_model.py
 │   │   └── vit_model.py
 │   ├── trainers
+│   │   ├── __init__.py
 │   │   └── federated_trainer.py
 │   └── utils
+│       ├── __init__.py
 │       ├── data_loader.py
 │       ├── dataset_loader.py
 │       ├── fastDP
-│       │   └── privacy_engine.py
+│       │   ├── README.md
+│       │   ├── __init__.py
+│       │   ├── accounting
+│       │   │   ├── __init__.py
+│       │   │   ├── accounting_manager.py
+│       │   │   └── rdp_accounting.py
+│       │   ├── autograd_grad_sample.py
+│       │   ├── autograd_grad_sample_dist.py
+│       │   ├── lora_utils.py
+│       │   ├── privacy_engine.py
+│       │   ├── privacy_engine_dist_extending.py
+│       │   ├── privacy_engine_dist_stage23.py
+│       │   ├── supported_differentially_private_layers.py
+│       │   ├── supported_layers_grad_samplers.py
+│       │   └── transformers_support.py
 │       └── partitioner.py
 └── tests
-    └── test_model.py
+    ├── test_config.py
+    ├── test_data_loader.py
+    ├── test_data_sampler.py
+    ├── test_dataset_loader.py
+    ├── test_evaluation_metrics.py
+    ├── test_federated_trainer.py
+    ├── test_partitioner.py
+    ├── test_reference_model_manager.py
+    ├── test_rmia_attack.py
+    └── test_statistical_tests.py
+
+20 directories, 83 files
 ```
 
 ---
