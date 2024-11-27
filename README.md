@@ -427,22 +427,6 @@ We've integrated a live monitoring dashboard using **TensorBoard** to visualize 
 
    Open [http://localhost:6006](http://localhost:6006) in your browser.
 
-## 📦 Docker Support
-
-Deploy the entire setup using Docker for consistent environments.
-
-### Build Docker Image
-
-```bash
-docker build -t federated-data-valuation .
-```
-
-### Run Docker Container
-
-```bash
-docker run -it federated-data-valuation
-```
-
 ---
 
 We hope you enjoy these new features! If you have any suggestions or encounter any issues, please let us know. Happy coding! 💻🎉
