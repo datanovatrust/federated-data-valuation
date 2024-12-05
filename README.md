@@ -146,13 +146,31 @@ federated-data-valuation
 ├── README.md
 ├── banner.svg
 ├── checkpoints
-│   └── ...
+│   ├── global_model_round_1.pt
+│   ├── global_model_round_2.pt
+│   ├── global_model_round_3.pt
+│   ├── global_model_round_4.pt
+│   └── global_model_round_5.pt
 ├── data
 │   ├── MNIST
 │   │   └── raw
-│   │       └── ...
+│   │       ├── t10k-images-idx3-ubyte
+│   │       ├── t10k-images-idx3-ubyte.gz
+│   │       ├── t10k-labels-idx1-ubyte
+│   │       ├── t10k-labels-idx1-ubyte.gz
+│   │       ├── train-images-idx3-ubyte
+│   │       ├── train-images-idx3-ubyte.gz
+│   │       ├── train-labels-idx1-ubyte
+│   │       └── train-labels-idx1-ubyte.gz
 │   ├── cifar-10-batches-py
-│   │   └── ...
+│   │   ├── batches.meta
+│   │   ├── data_batch_1
+│   │   ├── data_batch_2
+│   │   ├── data_batch_3
+│   │   ├── data_batch_4
+│   │   ├── data_batch_5
+│   │   ├── readme.html
+│   │   └── test_batch
 │   └── cifar-10-python.tar.gz
 ├── docs
 ├── experiments
@@ -172,7 +190,8 @@ federated-data-valuation
 ├── requirements.txt
 ├── scripts
 │   ├── run_rmia_attack.py
-│   └── train_federated.py
+│   ├── train_federated.py
+│   └── train_peft_federated.py
 ├── src
 │   ├── attacks
 │   │   ├── __init__.py
@@ -183,7 +202,8 @@ federated-data-valuation
 │   │   ├── rmia_attack.py
 │   │   └── statistical_tests.py
 │   ├── config
-│   │   └── config.yaml
+│   │   ├── config.yaml
+│   │   └── peft_config.yaml
 │   ├── models
 │   │   ├── __init__.py
 │   │   ├── base_model.py
@@ -193,7 +213,8 @@ federated-data-valuation
 │   │   └── vit_model.py
 │   ├── trainers
 │   │   ├── __init__.py
-│   │   └── federated_trainer.py
+│   │   ├── federated_trainer.py
+│   │   └── peft_federated_trainer.py
 │   └── utils
 │       ├── __init__.py
 │       ├── data_loader.py
@@ -214,7 +235,8 @@ federated-data-valuation
 │       │   ├── supported_differentially_private_layers.py
 │       │   ├── supported_layers_grad_samplers.py
 │       │   └── transformers_support.py
-│       └── partitioner.py
+│       ├── partitioner.py
+│       └── peft_utils.py
 └── tests
     ├── test_config.py
     ├── test_data_loader.py
@@ -227,7 +249,7 @@ federated-data-valuation
     ├── test_rmia_attack.py
     └── test_statistical_tests.py
 
-20 directories, 83 files
+20 directories, 87 files
 ```
 
 ---
