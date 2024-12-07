@@ -6,11 +6,13 @@ numpy
 pandas
 matplotlib
 jupyter
+peft
 PySyft
 pyyaml
 pytest
 syft
 scipy
+scikit-learn
 POT
 prv-accountant
 scipy
