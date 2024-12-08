@@ -162,6 +162,8 @@ pip-delete-this-directory.txt
 # ------------------------------
 .env
 .env.*
+blockchain_config.yaml
+FLRegistry_abi.json
 
 # ------------------------------
 # Other Caches and Logs

@@ -22,3 +22,5 @@ tqdm
 deepspeed
 jupyter
 jupyterlab
+eth-brownie
+web3

@@ -1,0 +1,15 @@
+# src/config/blockchain_config.yaml
+
+# Configuration for Blockchain and IPFS integration
+blockchain:
+  enabled: true
+  rpc_url: "http://127.0.0.1:8545"   # Local Ethereum node or testnet endpoint
+  contract_address: "0xYourDeployedContractAddress" # Replace after deployment
+  ipfs_gateway: "http://127.0.0.1:5001" # Local IPFS daemon API endpoint
+  # The ABI file of the contract is expected to be located at src/config/FLRegistry_abi.json
+  abi_file: "src/config/FLRegistry_abi.json"
+
+# Note:
+# - rpc_url: RPC endpoint of your Ethereum node or a cloud provider like Infura.
+# - contract_address: Address of the deployed FLRegistry contract.
+# - ipfs_gateway: Gateway or API endpoint of IPFS.

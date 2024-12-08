@@ -22,6 +22,13 @@ This project leverages Wasserstein distance to evaluate client contributions and
   - [Configuration](#configuration)
   - [Training](#training)
   - [Evaluation](#evaluation)
+- [🏦 Blockchain Integration for DP FL](#-blockchain-integration-for-dp-fl)
+  - [Installing Brownie](#installing-brownie)
+  - [Installing and Running Anvil (Foundry)](#installing-and-running-anvil-foundry)
+  - [Compiling and Deploying the Smart Contract](#compiling-and-deploying-the-smart-contract)
+  - [Integrating the Deployed Contract](#integrating-the-deployed-contract)
+  - [Running Federated Training with Blockchain Integration](#running-federated-training-with-blockchain-integration)
+  - [Citation for Privacy-Preserving Blockchain-Enabled FL](#citation-for-privacy-preserving-blockchain-enabled-fl)
 - [📁 Project Structure](#-project-structure)
 - [🔍 Detailed Description](#-detailed-description)
   - [Federated Learning Workflow](#federated-learning-workflow)
@@ -138,6 +145,133 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 
 ---
 
+## 🏦 Blockchain Integration for DP FL
+
+To enhance privacy and security, we integrate Blockchain and Differential Privacy. We will use Anvil (from Foundry) as the local Ethereum node and Brownie for contract deployment.
+
+### Installing Brownie
+
+Ensure you are in the `federated-data-valuation` directory and have `venv` activated:
+
+```bash
+source venv/bin/activate
+pip install eth-brownie
+```
+
+Check Brownie installation:
+
+```bash
+brownie --version
+```
+
+You should see a Brownie version output.
+
+### Installing and Running Anvil (Foundry)
+
+1. **Install Foundry & Anvil**:
+
+   ```bash
+   curl -L https://foundry.paradigm.xyz | bash
+   source /Users/davidzagardo/.zshenv  # According to the script instructions
+   foundryup
+   ```
+
+2. **Run Anvil**:
+
+   ```bash
+   anvil
+   ```
+
+   Keep anvil running in this terminal. It listens at `http://127.0.0.1:8545`.
+
+### Compiling and Deploying the Smart Contract
+
+1. **Compile the Contract**
+
+   Your contract (e.g., `FLRegistry.sol`) should be in `contracts/`. Run:
+
+   ```bash
+   brownie compile
+   ```
+
+2. **Deploy the Contract**
+
+   Assuming `scripts/deploy_contract.py` is your deployment script:
+
+   ```bash
+   brownie run scripts/deploy_contract.py --network development
+   ```
+
+   Brownie connects to anvil. It prints the deployed contract address.
+
+### Integrating the Deployed Contract
+
+1. **Update `blockchain_config.yaml`**
+
+   Copy the deployed contract address:
+
+   ```yaml
+   blockchain:
+     enabled: true
+     rpc_url: "http://127.0.0.1:8545"
+     contract_address: "0xYourDeployedContractAddress"
+     ipfs_gateway: "http://127.0.0.1:5001"
+     abi_file: "src/config/FLRegistry_abi.json"
+   ```
+
+2. **Export ABI**
+
+   After compilation, ABI is in `build/contracts/FLRegistry.json`:
+
+   ```bash
+   cat build/contracts/FLRegistry.json | jq '.abi' > src/config/FLRegistry_abi.json
+   ```
+
+3. **`blockchain_utils.py` Integration**
+
+   Ensure `src/utils/blockchain_utils.py` reads `blockchain_config.yaml` and uses `FLRegistry_abi.json` to interact with the contract, performing tasks like recording model hashes and incentivizing participants.
+
+### Running Federated Training with Blockchain Integration
+
+With anvil running and the contract deployed:
+
+```bash
+python scripts/train_federated.py
+```
+
+This will now:
+
+- Use DP for privacy.
+- Interact with the Blockchain (via Brownie and `blockchain_utils.py`).
+- Update global model hashes on-chain.
+
+### Citation for Privacy-Preserving Blockchain-Enabled FL
+
+This project also relates to privacy-preserving in Blockchain-enabled Federated Learning as discussed in:
+
+```
+Privacy-Preserving in Blockchain-based Federated Learning Systems
+Sameera K. M., Serena Nicolazzo, Marco Arazzi, Antonino Nocera, Rafidha Rehiman K. A., Vinod P, Mauro Conti
+arXiv:2401.03552 [cs.CR]
+https://doi.org/10.48550/arXiv.2401.03552
+```
+
+Please consider citing their work if using Blockchain and DP in your research:
+
+```
+@misc{sameera2024privacy,
+  title={Privacy-preserving in Blockchain-based Federated Learning Systems},
+  author={K. M., Sameera and Nicolazzo, Serena and Arazzi, Marco and Nocera, Antonino and Rehiman K. A., Rafidha and P., Vinod and Conti, Mauro},
+  year={2024},
+  eprint={2401.03552},
+  archivePrefix={arXiv},
+  primaryClass={cs.CR},
+  note={Computer Communications Journal, 2024}
+}
+```
+
+---
+
 ## 📁 Project Structure
 
 ```bash
@@ -146,110 +280,35 @@ federated-data-valuation
 ├── README.md
 ├── banner.svg
 ├── checkpoints
-│   ├── global_model_round_1.pt
-│   ├── global_model_round_2.pt
-│   ├── global_model_round_3.pt
-│   ├── global_model_round_4.pt
-│   └── global_model_round_5.pt
+│   └── ...
 ├── data
-│   ├── MNIST
-│   │   └── raw
-│   │       ├── t10k-images-idx3-ubyte
-│   │       ├── t10k-images-idx3-ubyte.gz
-│   │       ├── t10k-labels-idx1-ubyte
-│   │       ├── t10k-labels-idx1-ubyte.gz
-│   │       ├── train-images-idx3-ubyte
-│   │       ├── train-images-idx3-ubyte.gz
-│   │       ├── train-labels-idx1-ubyte
-│   │       └── train-labels-idx1-ubyte.gz
-│   ├── cifar-10-batches-py
-│   │   ├── batches.meta
-│   │   ├── data_batch_1
-│   │   ├── data_batch_2
-│   │   ├── data_batch_3
-│   │   ├── data_batch_4
-│   │   ├── data_batch_5
-│   │   ├── readme.html
-│   │   └── test_batch
-│   └── cifar-10-python.tar.gz
+│   └── ...
 ├── docs
 ├── experiments
-│   ├── client_contributions.png
-│   ├── confusion_matrix_round_1.png
-│   ├── confusion_matrix_round_2.png
-│   ├── confusion_matrix_round_3.png
-│   ├── confusion_matrix_round_4.png
-│   ├── confusion_matrix_round_5.png
-│   ├── rmia_roc_curve.png
-│   └── training_accuracy.png
+│   └── ...
 ├── logs
-│   ├── federated_training.log
-│   └── rmia_attack.log
+│   └── ...
 ├── notebooks
 │   └── federated_training.ipynb
 ├── requirements.txt
 ├── scripts
+│   ├── deploy_contract.py
 │   ├── run_rmia_attack.py
 │   ├── train_federated.py
 │   └── train_peft_federated.py
 ├── src
 │   ├── attacks
-│   │   ├── __init__.py
-│   │   ├── config.py
-│   │   ├── data_sampler.py
-│   │   ├── evaluation_metrics.py
-│   │   ├── reference_model_manager.py
-│   │   ├── rmia_attack.py
-│   │   └── statistical_tests.py
 │   ├── config
 │   │   ├── config.yaml
-│   │   └── peft_config.yaml
+│   │   ├── peft_config.yaml
+│   │   └── blockchain_config.yaml
 │   ├── models
-│   │   ├── __init__.py
-│   │   ├── base_model.py
-│   │   ├── image_classifier.py
-│   │   ├── model.py
-│   │   ├── resnet_model.py
-│   │   └── vit_model.py
 │   ├── trainers
-│   │   ├── __init__.py
-│   │   ├── federated_trainer.py
-│   │   └── peft_federated_trainer.py
 │   └── utils
-│       ├── __init__.py
-│       ├── data_loader.py
-│       ├── dataset_loader.py
-│       ├── fastDP
-│       │   ├── README.md
-│       │   ├── __init__.py
-│       │   ├── accounting
-│       │   │   ├── __init__.py
-│       │   │   ├── accounting_manager.py
-│       │   │   └── rdp_accounting.py
-│       │   ├── autograd_grad_sample.py
-│       │   ├── autograd_grad_sample_dist.py
-│       │   ├── lora_utils.py
-│       │   ├── privacy_engine.py
-│       │   ├── privacy_engine_dist_extending.py
-│       │   ├── privacy_engine_dist_stage23.py
-│       │   ├── supported_differentially_private_layers.py
-│       │   ├── supported_layers_grad_samplers.py
-│       │   └── transformers_support.py
-│       ├── partitioner.py
-│       └── peft_utils.py
+│       ├── blockchain_utils.py
+│       ├── ...
 └── tests
-    ├── test_config.py
-    ├── test_data_loader.py
-    ├── test_data_sampler.py
-    ├── test_dataset_loader.py
-    ├── test_evaluation_metrics.py
-    ├── test_federated_trainer.py
-    ├── test_partitioner.py
-    ├── test_reference_model_manager.py
-    ├── test_rmia_attack.py
-    └── test_statistical_tests.py
-
-20 directories, 87 files
+    └── ...
 ```
 
 ---
@@ -367,10 +426,11 @@ Feel free to reach out for any inquiries or support.
 
 ## 📚 References
 
-- Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang. "Data Valuation and Detections in Federated Learning." [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
-- Zhiqi Bu, Yu-Xiang Wang, Sheng Zha, George Karypis. "Differentially private optimization on large model at small cost." In *International Conference on Machine Learning*, pp. 3192–3218. PMLR, 2023.
-- [Fast Differential Privacy Library](https://github.com/awslabs/fast-differential-privacy)
-- [PyTorch Documentation](https://pytorch.org/docs/stable/index.html)
+- Li et al., "Data Valuation and Detections in Federated Learning," [arXiv:2311.05304](https://arxiv.org/abs/2311.05304).
+- Sameera K. M. et al., "Privacy-preserving in Blockchain-based Federated Learning Systems," [arXiv:2401.03552](https://arxiv.org/abs/2401.03552).
+- Bu et al., "Differentially private optimization on large model at small cost," ICML 2023.
+- [fastDP](https://github.com/awslabs/fast-differential-privacy)
+- [PyTorch Docs](https://pytorch.org/docs/stable/)
 - [Hugging Face Transformers](https://huggingface.co/transformers/)
 - [Federated Learning Concepts](https://ai.googleblog.com/2017/04/federated-learning-collaborative.html)
 
