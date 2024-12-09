@@ -22,6 +22,9 @@ import argparse  # Added argparse import
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)  # Set to DEBUG level to capture all logs
 
+# Ensure the 'logs' directory exists
+os.makedirs('logs', exist_ok=True)
+
 # Create handlers
 console_handler = logging.StreamHandler(sys.stdout)
 file_handler = logging.FileHandler('logs/federated_training.log')
