@@ -145,16 +145,29 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 
 ---
 
+Below is the **entire updated `README.md` section** related to the Blockchain version of the code and all necessary steps to launch it before running the blockchain federated DP training. This section assumes you have followed the previous steps in the `README.md` for installing dependencies and setting up your environment.
+
+```markdown
 ## 🏦 Blockchain Integration for DP FL
 
-To enhance privacy and security, we integrate Blockchain and Differential Privacy. We will use Anvil (from Foundry) as the local Ethereum node and Brownie for contract deployment.
+To enhance privacy and security, we integrate Blockchain and Differential Privacy into the federated learning pipeline. This approach records global model updates on-chain, leverages IPFS for decentralized storage, and can use differential privacy to protect client data. By default, we use a local Ethereum node (Anvil from Foundry) and a locally running IPFS node to avoid authentication issues with Infura.
+
+### Prerequisites for the Blockchain Setup
+
+1. **Ethereum Node (Anvil)**:  
+   We use Anvil (part of Foundry) as the local Ethereum node.
+
+2. **Brownie**:  
+   A Python framework for Ethereum. Used to compile, deploy, and interact with smart contracts.
+
+3. **IPFS Node (Local)**:  
+   We run a local IPFS daemon to store global model checkpoints without relying on external services.
 
 ### Installing Brownie
 
-Ensure you are in the `federated-data-valuation` directory and have `venv` activated:
+Ensure you are in the `federated-data-valuation` directory and have the virtual environment activated:
 
 ```bash
-source venv/bin/activate
 pip install eth-brownie
 ```
 
@@ -172,11 +185,14 @@ You should see a Brownie version output.
 
    ```bash
    curl -L https://foundry.paradigm.xyz | bash
-   source /Users/davidzagardo/.zshenv  # According to the script instructions
+   # Follow the instructions, then:
+   source ~/.zshenv
    foundryup
    ```
 
 2. **Run Anvil**:
+
+   In a separate terminal:
 
    ```bash
    anvil
@@ -188,7 +204,7 @@ You should see a Brownie version output.
 
 1. **Compile the Contract**
 
-   Your contract (e.g., `FLRegistry.sol`) should be in `contracts/`. Run:
+   We assume you have `FLRegistry.sol` in `contracts/`. Run:
 
    ```bash
    brownie compile
@@ -196,67 +212,90 @@ You should see a Brownie version output.
 
 2. **Deploy the Contract**
 
-   Assuming `scripts/deploy_contract.py` is your deployment script:
+   Use the provided deployment script (e.g., `scripts/deploy_contract.py`):
 
    ```bash
    brownie run scripts/deploy_contract.py --network development
    ```
 
-   Brownie connects to anvil. It prints the deployed contract address.
+   Brownie connects to anvil. It prints the deployed contract address. Copy that address.
 
 ### Integrating the Deployed Contract
 
-1. **Update `blockchain_config.yaml`**
+1. **Extract the ABI**
 
-   Copy the deployed contract address:
-
-   ```yaml
-   blockchain:
-     enabled: true
-     rpc_url: "http://127.0.0.1:8545"
-     contract_address: "0xYourDeployedContractAddress"
-     ipfs_gateway: "http://127.0.0.1:5001"
-     abi_file: "src/config/FLRegistry_abi.json"
-   ```
-
-2. **Export ABI**
-
-   After compilation, ABI is in `build/contracts/FLRegistry.json`:
+   After compilation, your contract ABI is in `build/contracts/FLRegistry.json`. Extract the ABI:
 
    ```bash
    cat build/contracts/FLRegistry.json | jq '.abi' > src/config/FLRegistry_abi.json
    ```
 
-3. **`blockchain_utils.py` Integration**
+2. **Update `blockchain_config.yaml`**
 
-   Ensure `src/utils/blockchain_utils.py` reads `blockchain_config.yaml` and uses `FLRegistry_abi.json` to interact with the contract, performing tasks like recording model hashes and incentivizing participants.
+   Edit `src/config/blockchain_config.yaml` to point to your deployed contract, local RPC, and local IPFS:
 
-### Running Federated Training with Blockchain Integration
+   ```yaml
+   blockchain:
+     enabled: true
+     rpc_url: "http://127.0.0.1:8545"    # Anvil endpoint
+     contract_address: "0xYourDeployedContractAddress"
+     ipfs_gateway: "http://127.0.0.1:5001" # Local IPFS daemon endpoint
+     abi_file: "src/config/FLRegistry_abi.json"
+   ```
 
-With anvil running and the contract deployed:
+### Installing and Running IPFS Locally
+
+1. **Install IPFS**:
+
+   On macOS (Homebrew):
+   ```bash
+   brew install ipfs
+   ```
+
+   On Linux, follow instructions from:
+   [https://docs.ipfs.tech/install/](https://docs.ipfs.tech/install/)
+
+2. **Initialize and Run IPFS Daemon**:
+
+   ```bash
+   ipfs init
+   ipfs daemon
+   ```
+
+   This runs IPFS locally with an API at `127.0.0.1:5001`.
+
+### Running Federated Training with Blockchain and DP
+
+With Anvil running, contract deployed, IPFS daemon running, and `blockchain_config.yaml` pointing to local IPFS and Ethereum node:
 
 ```bash
-python scripts/train_federated.py
+python scripts/train_blockchain_federated.py
 ```
 
-This will now:
+**What this does:**
 
-- Use DP for privacy.
-- Interact with the Blockchain (via Brownie and `blockchain_utils.py`).
-- Update global model hashes on-chain.
+- Performs federated training as in `train_federated.py`.
+- Uses DP (if `--epsilon` is provided) for privacy.
+- Uploads global model checkpoints to IPFS (no authentication required locally).
+- Records the model hash on the Blockchain contract.
+- If a `PRIVATE_KEY` environment variable is set, it can send transactions to record model updates on-chain. Without a private key, it will only read from the Blockchain.
+
+### Troubleshooting
+
+- **IPFS Connection Refused**: Make sure `ipfs daemon` is running locally.
+- **Blockchain Issues**: Ensure Anvil is running and contract is deployed.
 
 ### Citation for Privacy-Preserving Blockchain-Enabled FL
 
-This project also relates to privacy-preserving in Blockchain-enabled Federated Learning as discussed in:
+This project also references privacy-preserving approaches in Blockchain-based Federated Learning as discussed in:
 
 ```
 Privacy-Preserving in Blockchain-based Federated Learning Systems
-Sameera K. M., Serena Nicolazzo, Marco Arazzi, Antonino Nocera, Rafidha Rehiman K. A., Vinod P, Mauro Conti
-arXiv:2401.03552 [cs.CR]
-https://doi.org/10.48550/arXiv.2401.03552
+Sameera K. M., Serena Nicolazzo, Marco Arazzi, Antonino Nocera, Rafidha Rehiman K. A., Vinod P., Mauro Conti
+arXiv:2401.03552
 ```
 
-Please consider citing their work if using Blockchain and DP in your research:
+If you are using Blockchain and DP features, consider citing:
 
 ```
 @misc{sameera2024privacy,
@@ -265,7 +304,6 @@ Please consider citing their work if using Blockchain and DP in your research:
   year={2024},
   eprint={2401.03552},
   archivePrefix={arXiv},
-  primaryClass={cs.CR},
   note={Computer Communications Journal, 2024}
 }
 ```
