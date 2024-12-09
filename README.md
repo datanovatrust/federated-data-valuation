@@ -145,9 +145,6 @@ After training, evaluation metrics and plots are saved in the `experiments` dire
 
 ---
 
-Below is the **entire updated `README.md` section** related to the Blockchain version of the code and all necessary steps to launch it before running the blockchain federated DP training. This section assumes you have followed the previous steps in the `README.md` for installing dependencies and setting up your environment.
-
-```markdown
 ## 🏦 Blockchain Integration for DP FL
 
 To enhance privacy and security, we integrate Blockchain and Differential Privacy into the federated learning pipeline. This approach records global model updates on-chain, leverages IPFS for decentralized storage, and can use differential privacy to protect client data. By default, we use a local Ethereum node (Anvil from Foundry) and a locally running IPFS node to avoid authentication issues with Infura.
