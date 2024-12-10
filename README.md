@@ -69,6 +69,7 @@ Ensure you have the following installed:
 - [torchvision](https://pytorch.org/vision/)
 - [transformers](https://huggingface.co/transformers/)
 - Other dependencies listed in `requirements.txt`
+- Or, simply run the `setup.sh` file, which will set up a new conda environment for you and install the necessary requirements
 
 ### Installation
 
