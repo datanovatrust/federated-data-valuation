@@ -16,6 +16,9 @@ opt_einsum==3.3.0
 tqdm==4.66.2
 eth-brownie==1.20.6
 web3==6.15.1
+peft==0.13.2
+seaborn==0.13.2
+eth-utils==2.3.1
 
 # # May not be necessary
 # jupyter
