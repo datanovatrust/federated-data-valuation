@@ -64,7 +64,7 @@ This project leverages Wasserstein distance to evaluate client contributions and
 
 Ensure you have the following installed:
 
-- Python 3.7 or higher
+- Python 3.11.8 (has not been tested with other versions of Python)
 - [PyTorch](https://pytorch.org/)
 - [torchvision](https://pytorch.org/vision/)
 - [transformers](https://huggingface.co/transformers/)
