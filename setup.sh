@@ -116,7 +116,8 @@ install_packages "Installing scientific computing packages..." \
     'pydantic>=2.6.0,<2.7.0' \
     'opt_einsum>=3.3.0,<3.4.0' \
     'tqdm>=4.66.2,<4.67.0' \
-    'seaborn>=0.13.2,<0.14.0'
+    'seaborn>=0.13.2,<0.14.0' \
+    'zkpy==0.2.0'
 
 install_packages "Installing Web3 packages..." \
     'web3>=6.15.1,<6.16.0' \

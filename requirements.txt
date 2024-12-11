@@ -19,6 +19,7 @@ web3==6.15.1
 peft==0.13.2
 seaborn==0.13.2
 eth-utils==2.3.1
+zkpy==0.2.0
 
 # # May not be necessary
 # jupyter
