@@ -1,7 +1,9 @@
+// circuits/mimc_hash.circom
+
 pragma circom 2.0.0;
 
 function get_mimc_constants(n) {
-    var constants[220];
+    var constants[110];  // Reduced from 220 to 110 rounds
     for (var i = 0; i < n; i++) {
         constants[i] = i + 1;
     }
@@ -9,12 +11,12 @@ function get_mimc_constants(n) {
 }
 
 template MiMCSponge(nInputs) {
-    signal input ins[nInputs];  // Inputs
-    signal input k;             // Key
-    signal output hash;         // Output hash
+    signal input ins[nInputs];  
+    signal input k;             
+    signal output hash;         
 
-    var nRounds = 220;
-    var constants[220] = get_mimc_constants(nRounds);
+    var nRounds = 110;  // Reduced number of rounds
+    var constants[110] = get_mimc_constants(nRounds);
 
     signal currentStateInputs[nInputs+1];
     currentStateInputs[0] <== k;
@@ -22,6 +24,7 @@ template MiMCSponge(nInputs) {
     signal afterAdd[nInputs];
     signal roundStates[nInputs][nRounds+1];
     signal tVals[nInputs][nRounds];
+    signal tSquaredVals[nInputs][nRounds];
     signal tCubedVals[nInputs][nRounds];
 
     for (var i = 0; i < nInputs; i++) {
@@ -30,7 +33,8 @@ template MiMCSponge(nInputs) {
 
         for (var j = 0; j < nRounds; j++) {
             tVals[i][j] <== roundStates[i][j] + constants[j];
-            tCubedVals[i][j] <== tVals[i][j] * tVals[i][j] * tVals[i][j];
+            tSquaredVals[i][j] <== tVals[i][j] * tVals[i][j];
+            tCubedVals[i][j] <== tSquaredVals[i][j] * tVals[i][j];
             roundStates[i][j+1] <== tCubedVals[i][j];
         }
 

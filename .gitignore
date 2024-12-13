@@ -182,3 +182,4 @@ FLRegistry_abi.json
 *.py,cover
 *.egg
 *.egg-info/
+*.ptau

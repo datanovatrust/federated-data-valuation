@@ -1,3 +1,5 @@
+// circuits/aggregator.circom
+
 pragma circom 2.0.0;
 
 include "mimc_hash.circom";
@@ -7,6 +9,7 @@ template ModelAverage(numClients) {
     signal input newValues[numClients];  
     signal output out;                   
 
+    // Calculate sum of new values
     signal sums[numClients+1];
     sums[0] <== 0;
     for (var i = 0; i < numClients; i++) {
@@ -16,13 +19,16 @@ template ModelAverage(numClients) {
     signal sum;
     sum <== sums[numClients];
 
+    // Calculate difference and scale properly
+    signal currValueScaled;
+    currValueScaled <== currValue * numClients;
+    
     signal diff;
-    diff <== sum - (numClients * currValue);
+    diff <== sum - currValueScaled;
 
-    signal scaledDiff;
-    diff <== scaledDiff * numClients;
-
-    out <== currValue + scaledDiff;
+    // Calculate final output: currValue + (diff / numClients)
+    // Since we can't divide, we already scaled diff appropriately above
+    out <== currValue + (diff / numClients);  // The division by numClients cancels out the earlier multiplication
 }
 
 template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
