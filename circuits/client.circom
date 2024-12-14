@@ -46,9 +46,9 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     signal input Y[outputSize];              
     signal input LWp[hiddenSize][inputSize]; 
     signal input LBp[hiddenSize];            
-    signal input delta2_input[outputSize];   // Delta2 input
-    signal input dW_input[hiddenSize][inputSize];  // dW input
-    signal input dB_input[hiddenSize];       // NEW: dB input
+    signal input delta2_input[outputSize];   
+    signal input dW_input[hiddenSize][inputSize];  
+    signal input dB_input[hiddenSize];       
 
     // Forward propagation
     signal Z1[hiddenSize];       
@@ -84,7 +84,7 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         }
         hiddenLayer[i].factor <== pr;
         Z1[i] <== hiddenLayer[i].out + GB[i];
-        A1[i] <== Z1[i];  // no ReLU logic
+        A1[i] <== Z1[i]; 
     }
 
     // Output layer
@@ -103,26 +103,21 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     // Compute MSE and verify delta2 relationships
     mseTotal[0] <== 0;
     for (var i = 0; i < outputSize; i++) {
-        // Forward values
         diff[i] <== A2[i] - Y[i];
         diffSquared[i] <== diff[i] * diff[i];
         scaledDiffSquared[i] <== diffSquared[i] * pr;
         mseTotal[i+1] <== mseTotal[i] + scaledDiffSquared[i];
         
-        // Compute gradients
         diffTimesTwo[i] <== diff[i] * 2;
-        
-        // Use input delta2 and verify relationship
         delta2[i] <== delta2_input[i];
         scaledDelta2[i] <== delta2[i] * pr;
         scaledDelta2[i] === diffTimesTwo[i];
     }
 
-    // Define scaledMSE as the average of scaledDiffSquared[i]
     scaledMSE <== mseTotal[outputSize] / outputSize;
     MSE <== scaledMSE;
 
-    // Compute delta1 from delta2 using WeightedSum (with factor=1)
+    // Compute delta1
     component hiddenGrads[hiddenSize];
     for (var i = 0; i < hiddenSize; i++) {
         hiddenGrads[i] = WeightedSum(outputSize);
@@ -134,11 +129,9 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         delta1[i] <== hiddenGrads[i].out;
     }
 
-    // Define dW, dB and scaledDW relationships
     for (var i = 0; i < hiddenSize; i++) {
-        // Initialize dB from input and verify it equals delta1
         dB[i] <== dB_input[i];
-        dB[i] === delta1[i];  // Verify relationship with delta1
+        dB[i] === delta1[i];  
         
         for (var j = 0; j < inputSize; j++) {
             delta1X[i][j] <== delta1[i] * X[j];
@@ -148,7 +141,6 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         }
     }
 
-    // Weight and bias updates
     signal weightUpdatesValid[hiddenSize][inputSize];
     signal biasUpdatesValid[hiddenSize];
     signal weightUpdate[hiddenSize][inputSize];
@@ -193,14 +185,12 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     }
     globalHasher.k <== 0;
 
-    // Verify hashes
     signal localHashMatch;
     signal globalHashMatch;
 
     localHashMatch <== localHasher.hash - ldigest;
     globalHashMatch <== globalHasher.hash - ScGH;
 
-    // Outputs
     signal output valid_computation;
     signal output valid_hashes;
 
@@ -208,4 +198,5 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     valid_hashes <== globalHashMatch;
 }
 
-component main = ClientCircuit(9, 20, 6);
+// Reduced parameters for fewer constraints
+component main = ClientCircuit(5, 10, 3);

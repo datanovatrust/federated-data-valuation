@@ -9,7 +9,6 @@ template ModelAverage(numClients) {
     signal input newValues[numClients];  
     signal output out;                   
 
-    // Calculate sum of new values
     signal sums[numClients+1];
     sums[0] <== 0;
     for (var i = 0; i < numClients; i++) {
@@ -19,30 +18,25 @@ template ModelAverage(numClients) {
     signal sum;
     sum <== sums[numClients];
 
-    // Calculate difference and scale properly
     signal currValueScaled;
     currValueScaled <== currValue * numClients;
-    
+
     signal diff;
     diff <== sum - currValueScaled;
 
-    // Calculate final output: currValue + (diff / numClients)
-    // Since we can't divide, we already scaled diff appropriately above
-    out <== currValue + (diff / numClients);  // The division by numClients cancels out the earlier multiplication
+    out <== currValue + (diff / numClients); 
 }
 
 template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
-    // Public inputs
-    signal input ScLH[numClients];   
+    signal input ScLH[numClients];  
     signal input gdigest;           
-    
-    // Private inputs
-    signal input GW[hiddenSize][inputSize];   
-    signal input GB[hiddenSize];              
-    signal input LWp[numClients][hiddenSize][inputSize];  
-    signal input LBp[numClients][hiddenSize];             
-    signal input GWp[hiddenSize][inputSize];  
-    signal input GBp[hiddenSize];             
+
+    signal input GW[hiddenSize][inputSize];          
+    signal input GB[hiddenSize];                     
+    signal input LWp[numClients][hiddenSize][inputSize]; 
+    signal input LBp[numClients][hiddenSize];         
+    signal input GWp[hiddenSize][inputSize];          
+    signal input GBp[hiddenSize];                     
 
     signal CGW[hiddenSize][inputSize];
     signal CGB[hiddenSize];
@@ -79,7 +73,6 @@ template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
 
     component localHashers[numClients];
     signal validLocalHashes[numClients];
-
     for (var i = 0; i < numClients; i++) {
         localHashers[i] = MiMCArray(hiddenSize * inputSize + hiddenSize);
         var idx = 0;
@@ -123,18 +116,18 @@ template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
     
     var hashMatch = globalHasher.hash - gdigest;
 
-    // Without zero-check gadgets, just pass through:
     valid_model <== hashMatch; 
 
-    var allHashesValid = 1;
+    signal tmpSquared[numClients];
+    signal allHashesProducts[numClients+1];
+    allHashesProducts[0] <== 1;
     for (var i = 0; i < numClients; i++) {
-        signal tmpSquared;
-        tmpSquared <== validLocalHashes[i]*validLocalHashes[i];
-        // Without zero-check gadgets, no proper boolean. Just do a trivial assignment:
-        allHashesValid = allHashesValid * (tmpSquared+1);
+        tmpSquared[i] <== validLocalHashes[i]*validLocalHashes[i];
+        allHashesProducts[i+1] <== allHashesProducts[i]*(tmpSquared[i]+1);
     }
 
-    valid_hashes <== allHashesValid;
+    valid_hashes <== allHashesProducts[numClients];
 }
 
-component main = AggregatorCircuit(8, 9, 20, 6);
+// Reduced parameters for fewer constraints
+component main = AggregatorCircuit(4, 5, 10, 3);

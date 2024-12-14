@@ -194,10 +194,16 @@ def setup_build_directory():
 def setup_ptau():
     """Set up Powers of Tau with detailed logging and progress monitoring."""
     print_banner("🚀 Powers of Tau Setup")
-    
-    ptau_file = f"pot_0000.ptau"
+
+    ptau_file = "pot_0000.ptau"
     final_ptau = "final.ptau"
     
+    # Check if final.ptau already exists
+    if os.path.exists(final_ptau):
+        log_progress("ℹ️", f"{final_ptau} already exists. Skipping PTau generation steps.")
+        return final_ptau
+
+    # If we don't have final.ptau, run the full ceremony
     log_step("1️⃣", "Starting new powers of tau ceremony")
     cmd = ["snarkjs", "powersoftau", "new", "bn128", "18", ptau_file]
     if not run_command(cmd, "starting new powers of tau", show_progress=True):
@@ -205,7 +211,7 @@ def setup_ptau():
 
     log_step("2️⃣", "Contributing to ceremony")
     contrib_ptau = "pot_0001.ptau"
-    cmd = ["snarkjs", "powersoftau", "contribute", ptau_file, contrib_ptau, 
+    cmd = ["snarkjs", "powersoftau", "contribute", ptau_file, contrib_ptau,
            "--name=\"First contribution\"", "--entropy=\"random\""]
     if not run_command(cmd, "contributing to ptau", show_progress=True):
         raise RuntimeError("Failed to contribute to ceremony")
@@ -270,8 +276,8 @@ def main():
         log_step("📁", "Setting up directories")
         build_dir = setup_build_directory()
         
-        log_step("🧹", "Cleaning old files")
-        clean_ptau_files()
+        # log_step("🧹", "Cleaning old files")
+        # clean_ptau_files()
         
         # Change to project root directory
         os.chdir(Path(__file__).parent.parent)
