@@ -72,16 +72,13 @@ class ZKPFederatedTrainer:
         self.wasserstein_train_dataset = wasserstein_train_dataset
         self.wasserstein_test_dataset = wasserstein_test_dataset
 
-        # Device configuration
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # Set circuit-compatible parameters (must match circuits)
-        self.input_size = 5    # from client.circom
+        self.input_size = 5
         self.hidden_size = 10
         self.output_size = 3
-        self.num_clients = min(4, int(self.config['federated_learning']['num_clients']))  # aggregator expects up to 4 clients
+        self.num_clients = min(4, int(self.config['federated_learning']['num_clients']))
 
-        # Other training parameters
         self.batch_size = int(self.config['training']['batch_size'])
         self.rounds = int(self.config['federated_learning']['rounds'])
         self.epochs = int(self.config['training']['epochs'])
@@ -90,7 +87,7 @@ class ZKPFederatedTrainer:
         self.fraction_fit = float(self.config['federated_learning']['fraction_fit'])
         self.num_shards = int(self.config['federated_learning'].get('num_shards', 50))
         self.num_classes = int(self.config['model']['num_labels'])
-        self.precision = 1000  # Precision for scaling
+        self.precision = 1000
 
         if self.num_clients <= 0:
             logger.error("Number of clients must be greater than zero.")
@@ -100,13 +97,9 @@ class ZKPFederatedTrainer:
         self.client_contributions = []
         self.accuracy_list = []
 
-        # Initialize directories
         self.initialize_directories()
-
-        # Initialize TensorBoard SummaryWriter
         self.writer = SummaryWriter(log_dir='runs')
 
-        # Log training parameters
         self.writer.add_hparams({
             'num_clients': self.num_clients,
             'batch_size': self.batch_size,
@@ -117,22 +110,17 @@ class ZKPFederatedTrainer:
             'fraction_fit': self.fraction_fit,
         }, {})
 
-        # Differential Privacy parameters
         self.target_epsilon = target_epsilon
         self.use_dp = self.target_epsilon is not None and PrivacyEngine is not None
 
-        # Logging training mode
         logger.info(f"📝 Training parameters: {self.num_clients} clients, {self.rounds} rounds, {self.epochs} epochs per round")
         logger.info(f"Batch size: {self.batch_size}, Learning rate: {self.learning_rate}")
         if self.use_dp:
-            logger.info(f"🔒 Differential Privacy enabled with epsilon={self.target_epsilon}")
+            logger.info(f"🔒 DP enabled with epsilon={self.target_epsilon}")
         else:
             logger.info("🚀 Training with standard Federated Learning")
 
-        # Load Blockchain and IPFS configuration
         self._load_blockchain_config()
-
-        # Initialize ZKP components
         self.initialize_zkp_components()
 
         logger.info("✨ Setup complete. Beginning training session...")
@@ -219,12 +207,9 @@ class ZKPFederatedTrainer:
         logger.info("✅ ZKP setup verification complete")
 
     def initialize_zkp_components(self):
-        """Initialize ZKP components with path resolution and verification."""
         logger.info("🔧 Initializing ZKP components...")
-        
-        # Verify setup first
         self.verify_zkp_setup()
-        
+
         client_circuit = os.path.join(os.getcwd(), 'client.r1cs')
         client_pk = os.path.join(os.getcwd(), 'client_0000.zkey')
         client_wasm = os.path.join(os.getcwd(), 'client_js', 'client.wasm')
@@ -240,7 +225,12 @@ class ZKPFederatedTrainer:
         self.zkp_verifier = ZKPVerifier(client_vkey_path, aggregator_vkey_path)
         
         logger.info("🔑 Initializing ZKP client wrapper...")
-        self.zkp_client = ZKPClientWrapper(client_circuit, client_pk, client_wasm)
+
+        # Apply dimension adapter modification
+        from src.utils.dimension_adapter import modify_zkp_client_wrapper
+        ZKPClientWrapperModified = modify_zkp_client_wrapper(ZKPClientWrapper)
+
+        self.zkp_client = ZKPClientWrapperModified(client_circuit, client_pk, client_wasm)
         
         logger.info("🔑 Initializing ZKP aggregator wrapper...")
         self.zkp_aggregator = ZKPAggregatorWrapper(aggregator_circuit, aggregator_pk, aggregator_wasm)

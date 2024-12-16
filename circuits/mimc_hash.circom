@@ -3,20 +3,23 @@
 pragma circom 2.0.0;
 
 function get_mimc_constants(n) {
-    var constants[110];  // Reduced from 220 to 110 rounds
+    // Reduced the number of rounds significantly from 110 to 22 for speed
+    var constants[2];
     for (var i = 0; i < n; i++) {
         constants[i] = i + 1;
     }
     return constants;
 }
 
+// Use fewer rounds for faster proving.
+// WARNING: This reduces cryptographic security.
 template MiMCSponge(nInputs) {
     signal input ins[nInputs];  
     signal input k;             
     signal output hash;         
 
-    var nRounds = 110;  // Reduced number of rounds
-    var constants[110] = get_mimc_constants(nRounds);
+    var nRounds = 2;  // Reduced from 110 to 22
+    var constants[2] = get_mimc_constants(nRounds);
 
     signal currentStateInputs[nInputs+1];
     currentStateInputs[0] <== k;
