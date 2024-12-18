@@ -276,8 +276,8 @@ def main():
         log_step("📁", "Setting up directories")
         build_dir = setup_build_directory()
         
-        # log_step("🧹", "Cleaning old files")
-        # clean_ptau_files()
+        log_step("🧹", "Cleaning old files")
+        clean_ptau_files()
         
         # Change to project root directory
         os.chdir(Path(__file__).parent.parent)

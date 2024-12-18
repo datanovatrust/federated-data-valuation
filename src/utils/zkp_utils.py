@@ -233,12 +233,11 @@ def scale_array_to_int(arr: List[float], precision: int = 1000) -> List[int]:
     return [scale_to_int(x, precision) for x in arr]
 
 def mimc_hash(values: List[int], key=0):
+    """Compute MiMC hash of input values."""
     if not values:
         return 0
     inputs = [int(v) % FIELD_PRIME for v in values]
     nInputs = len(inputs)
-
-    # Reduced number of rounds to 22
     nRounds = 2
     constants = [i+1 for i in range(nRounds)]
 
@@ -252,7 +251,6 @@ def mimc_hash(values: List[int], key=0):
 
         for j in range(nRounds):
             t = (roundStates[j] + constants[j]) % FIELD_PRIME
-            # t^3 mod FIELD_PRIME
             t_cubed = (t * t * t) % FIELD_PRIME
             roundStates[j+1] = t_cubed
 
@@ -269,11 +267,19 @@ def generate_client_input(gw: List[float], gb: List[float],
     Generates client input matching exact circuit computations.
     All computations maintain circuit scaling and constraints.
     """
+    # Add CRITICAL logging for input parameters
+    logger.critical("=== GENERATE CLIENT INPUT STARTED ===")
+    logger.critical("Input parameters:")
+    logger.critical(f"eta (learning rate): {eta}")
+    logger.critical(f"pr (precision): {pr}")
+    logger.critical(f"scgh (global hash): {scgh}")
+    logger.critical(f"ldigest (local hash): {ldigest}")
+
     hiddenSize = 10
     inputSize = 5
     outputSize = 3
 
-    # Add debug logging for input ranges
+    # Keep original debug logging for input ranges
     logger.debug("Input value ranges before scaling:")
     logger.debug(f"GW range: [{min(gw)}, {max(gw)}]")
     logger.debug(f"GB range: [{min(gb)}, {max(gb)}]")
@@ -302,6 +308,13 @@ def generate_client_input(gw: List[float], gb: List[float],
     logger.debug(f"LWp range: [{min(lwp_int)}, {max(lwp_int)}]")
     logger.debug(f"LBp range: [{min(lbp_int)}, {max(lbp_int)}]")
     logger.debug(f"Scaled eta: {eta_int}")
+
+    # Add CRITICAL logging for scaled public signals
+    logger.critical("Scaled public signal values:")
+    logger.critical(f"eta_int: {eta_int}")
+    logger.critical(f"pr: {pr}")
+    logger.critical(f"scgh: {scgh}")
+    logger.critical(f"ldigest: {ldigest}")
 
     # Check for field prime overflow
     FIELD_PRIME_HALF = FIELD_PRIME // 2
@@ -389,6 +402,19 @@ def generate_client_input(gw: List[float], gb: List[float],
         "dB_input": dB_computed
     }
 
+    # Add CRITICAL logging for final client input verification
+    logger.critical("=== Final Client Input Verification ===")
+    logger.critical("Checking required public signals:")
+    logger.critical(f"eta present: {'eta' in client_input}")
+    logger.critical(f"pr present: {'pr' in client_input}")
+    logger.critical(f"ScGH present: {'ScGH' in client_input}")
+    logger.critical(f"ldigest present: {'ldigest' in client_input}")
+    logger.critical("Final public signal values:")
+    logger.critical(f"eta: {client_input['eta']}")
+    logger.critical(f"pr: {client_input['pr']}")
+    logger.critical(f"ScGH: {client_input['ScGH']}")
+    logger.critical(f"ldigest: {client_input['ldigest']}")
+
     # Final validation of all values against field prime
     flat_values = []
     for v in client_input.values():
@@ -464,7 +490,8 @@ def generate_client_input_for_test(gw, gb, x, y, lwp, lbp, eta, pr, scgh, ldiges
 def generate_aggregator_input_for_test(gw, gb, lwps, lbps, gwp, gbp, sclh, gdigest):
     return generate_aggregator_input(gw, gb, lwps, lbps, gwp, gbp, sclh, gdigest)
 
-def run_command(cmd):
+def run_command(cmd: List[str]) -> subprocess.CompletedProcess:
+    """Execute a command and return the result."""
     logger.debug(f"Running command: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -473,62 +500,84 @@ def run_command(cmd):
         logger.error(f"stderr: {result.stderr}")
     return result
 
-def generate_client_proof(client_inputs: dict, circuit_path: str, proving_key_path: str, js_dir: str):
-    """Generate a client proof with enhanced debugging and proper public signal handling."""
+def generate_client_proof(client_inputs: dict, circuit_path: str, proving_key_path: str, js_dir: str) -> Dict:
+    """
+    Generate a client proof with proper handling of public signals.
+    
+    Args:
+        client_inputs: Dictionary containing all input values including the 4 required public signals
+        circuit_path: Path to the circuit file
+        proving_key_path: Path to the proving key
+        js_dir: Directory containing JS/WASM files
+    
+    Returns:
+        Dictionary containing proof data and public signals
+    """
+    logger.critical("=== GENERATE CLIENT PROOF STARTED ===")
+    logger.critical(f"Circuit path: {circuit_path}")
+    logger.critical(f"Proving key path: {proving_key_path}")
+    logger.critical(f"JS dir: {js_dir}")
+
     if not os.path.exists(circuit_path):
         raise FileNotFoundError(f"Circuit file not found at {circuit_path}")
     if not os.path.exists(proving_key_path):
         raise FileNotFoundError(f"Proving key file not found at {proving_key_path}")
 
+    # Define all file paths
     input_file = "client_input.json"
     witness_file = "witness.wtns"
     proof_file = "proof.json"
-    public_file = "public.json"
+    original_public_file = "original_public.json"  # Store our original signals
+    snarkjs_public_file = "snarkjs_public.json"   # For snarkjs output
 
     try:
         # Clean up any existing files
-        for f in [input_file, witness_file, proof_file, public_file]:
+        for f in [input_file, witness_file, proof_file, original_public_file, snarkjs_public_file]:
             if os.path.exists(f):
                 os.remove(f)
 
-        # Add debug logging for client inputs
-        logger.debug("Client inputs contents:")
-        logger.debug(f"eta: {client_inputs.get('eta')}")
-        logger.debug(f"pr: {client_inputs.get('pr')}")
-        logger.debug(f"ldigest: {client_inputs.get('ldigest')}")
-        logger.debug(f"ScGH: {client_inputs.get('ScGH')}")
+        # Verify all required public signals are present
+        required_signals = ['eta', 'pr', 'ldigest', 'ScGH']
+        missing_signals = [sig for sig in required_signals if sig not in client_inputs]
+        if missing_signals:
+            raise ValueError(f"Missing required public signals: {missing_signals}")
 
-        debug_input = {
-            "original_inputs": client_inputs,
-            "circuit_path": circuit_path,
-            "proving_key_path": proving_key_path,
-            "js_dir": js_dir
-        }
-        with open("debug_proof_generation.json", "w") as f:
-            json.dump(debug_input, f, indent=2)
+        # Log public signals
+        logger.critical("=== Public Signals Check ===")
+        for signal in required_signals:
+            logger.critical(f"{signal}: {client_inputs[signal]}")
 
-        # Ensure all required values are present
-        required_fields = ['eta', 'pr', 'ldigest', 'ScGH']
-        missing_fields = [field for field in required_fields if field not in client_inputs]
-        if missing_fields:
-            raise ValueError(f"Missing required fields in client_inputs: {missing_fields}")
-
-        # Create the public signals array with all four required values
-        # Don't scale eta here - it should already be scaled in client_inputs
+        # Create array of public signals in the correct order
         public_signals = [
-            str(client_inputs["eta"]),
-            str(client_inputs["pr"]),
-            str(client_inputs["ldigest"]),
-            str(client_inputs["ScGH"])
+            str(client_inputs['eta']),
+            str(client_inputs['pr']),
+            str(client_inputs['ldigest']),
+            str(client_inputs['ScGH'])
         ]
 
-        logger.debug(f"Generated public signals: {public_signals}")
+        logger.critical("=== Ordered Public Signals ===")
+        logger.critical(f"Public signals array: {public_signals}")
+
+        # Verify we have exactly 4 public signals
+        if len(public_signals) != 4:
+            logger.critical(f"Public signals length check failed: got {len(public_signals)}")
+            raise ValueError(f"Expected exactly 4 public signals, got {len(public_signals)}")
 
         # Write input and public files
+        logger.critical("=== Writing Files ===")
+        
         with open(input_file, "w") as f:
+            logger.critical(f"Writing input file: {input_file}")
             json.dump(client_inputs, f, indent=2)
         
-        with open(public_file, "w") as f:
+        # Save our original public signals
+        with open(original_public_file, "w") as f:
+            logger.critical(f"Writing original public signals to {original_public_file}")
+            json.dump(public_signals, f)
+        
+        # Create initial snarkjs public file
+        with open(snarkjs_public_file, "w") as f:
+            logger.critical(f"Writing initial snarkjs public file: {snarkjs_public_file}")
             json.dump(public_signals, f)
 
         logger.info("🔑 Generating client proof...")
@@ -539,73 +588,79 @@ def generate_client_proof(client_inputs: dict, circuit_path: str, proving_key_pa
         gen_witness_js = os.path.join(js_dir, "generate_witness.js")
 
         if not os.path.exists(gen_witness_js) or not os.path.exists(wasm_path):
-            raise FileNotFoundError(f"Required files missing:\n"
-                                  f"generate_witness.js: {os.path.exists(gen_witness_js)}\n"
-                                  f"client.wasm: {os.path.exists(wasm_path)}")
+            raise FileNotFoundError(
+                f"Required files missing:\n"
+                f"generate_witness.js: {os.path.exists(gen_witness_js)}\n"
+                f"client.wasm: {os.path.exists(wasm_path)}"
+            )
 
-        # Generate witness with detailed logging
-        logger.debug("Generating witness...")
+        logger.critical("=== Generating Witness ===")
         witness_cmd = ["node", gen_witness_js, wasm_path, input_file, witness_file]
         witness_result = run_command(witness_cmd)
         if witness_result.returncode != 0:
-            logger.error("Witness generation failed:")
-            logger.error(f"Command: {' '.join(witness_cmd)}")
-            logger.error(f"Output: {witness_result.stdout}")
-            logger.error(f"Error: {witness_result.stderr}")
             raise RuntimeError("Witness generation failed")
 
-        # Generate proof
-        logger.debug("Generating proof...")
-        prove_cmd = ["snarkjs", "groth16", "prove", proving_key_path, witness_file, proof_file, public_file]
+        logger.critical("=== Generating Proof ===")
+        prove_cmd = ["snarkjs", "groth16", "prove", proving_key_path, witness_file, proof_file, snarkjs_public_file]
         prove_result = run_command(prove_cmd)
         if prove_result.returncode != 0:
-            logger.error("Proof generation failed:")
-            logger.error(f"Command: {' '.join(prove_cmd)}")
-            logger.error(f"Output: {prove_result.stdout}")
-            logger.error(f"Error: {prove_result.stderr}")
             raise RuntimeError("Proof generation failed")
 
-        # Load and verify the proof files
+        logger.critical("=== Verifying Generated Files ===")
+        
+        # Load and verify the proof file
         with open(proof_file) as pf:
             proof_data = json.load(pf)
-            required_keys = {'pi_a', 'pi_b', 'pi_c', 'protocol', 'curve'}
-            missing_keys = required_keys - set(proof_data.keys())
+            required_proof_keys = {'pi_a', 'pi_b', 'pi_c', 'protocol', 'curve'}
+            missing_keys = required_proof_keys - set(proof_data.keys())
             if missing_keys:
                 raise ValueError(f"Proof missing required keys: {missing_keys}")
+            logger.critical(f"Proof data keys: {list(proof_data.keys())}")
 
-        with open(public_file) as pubf:
-            public_data = json.load(pubf)
-            if not isinstance(public_data, list):
-                raise ValueError("Public signals must be a list")
-            if len(public_data) != 4:
-                raise ValueError(f"Expected 4 public signals, got {len(public_data)}")
+        # Load our original public signals
+        with open(original_public_file) as f:
+            original_signals = json.load(f)
+            logger.critical(f"Original public signals: {original_signals}")
 
-            # Additional verification
-            logger.debug(f"Public signals from file: {public_data}")
-            logger.debug(f"Generated public signals: {public_signals}")
+        # Load snarkjs generated public signals
+        with open(snarkjs_public_file) as f:
+            snarkjs_signals = json.load(f)
+            logger.critical(f"Snarkjs public signals: {snarkjs_signals}")
 
-            if public_data != public_signals:
-                logger.error("Public signals mismatch:")
-                logger.error(f"Expected: {public_signals}")
-                logger.error(f"Got: {public_data}")
-                raise ValueError("Public signals in file don't match generated signals")
+        # Verify signals match
+        if original_signals != public_signals:
+            logger.critical("Original signals don't match expected signals")
+            raise ValueError("Public signal mismatch in original file")
 
+        if len(snarkjs_signals) != 4:
+            logger.critical(f"Snarkjs produced wrong number of public signals: {len(snarkjs_signals)}")
+            raise ValueError(f"Expected 4 public signals from snarkjs, got {len(snarkjs_signals)}")
+
+        # Use our original signals for the result
         gen_time = time.time() - start_time
         logger.info(f"✅ Client proof generated successfully in {gen_time:.2f}s")
-
-        return {
+        
+        result = {
             "proof": proof_data,
-            "public": public_signals,
+            "public": original_signals,
             "debug_info": {
                 "generation_time": gen_time,
                 "witness_output": witness_result.stdout if witness_result.stdout else "",
                 "prove_output": prove_result.stdout if prove_result.stdout else "",
-                "public_signals": public_signals
+                "original_signals": original_signals,
+                "snarkjs_signals": snarkjs_signals
             }
         }
+        
+        logger.critical("=== Final Result ===")
+        logger.critical(f"Result keys: {list(result.keys())}")
+        logger.critical(f"Public signals in result: {result['public']}")
+
+        return result
 
     except Exception as e:
         logger.error(f"Proof generation failed: {str(e)}")
+        logger.critical(f"Critical error in proof generation: {str(e)}")
         logger.debug("Full exception:", exc_info=True)
         raise
 
@@ -615,10 +670,10 @@ def generate_client_proof(client_inputs: dict, circuit_path: str, proving_key_pa
             if os.path.exists(f):
                 os.remove(f)
 
-def generate_aggregator_proof(agg_inputs: dict, circuit_path: str, proving_key_path: str, js_dir: str):
+def generate_aggregator_proof(agg_inputs: dict, circuit_path: str, proving_key_path: str, js_dir: str) -> tuple:
     """
-    Generate aggregator proof with a properly written public signals file.
-    Aggregator circuit expects numClients local hashes + 1 global digest signals in public.json.
+    Generate aggregator proof with proper public signal handling.
+    Uses separate files for original and snarkjs-generated public signals.
     """
     if not os.path.exists(circuit_path):
         raise FileNotFoundError(f"Circuit file not found at {circuit_path}")
@@ -628,14 +683,15 @@ def generate_aggregator_proof(agg_inputs: dict, circuit_path: str, proving_key_p
     input_file = "aggregator_input.json"
     witness_file = "witness.wtns"
     proof_file = "proof.json"
-    public_file = "public.json"
+    original_public_file = "original_aggregator_public.json"
+    snarkjs_public_file = "snarkjs_aggregator_public.json"
 
     # Clean up old files
-    for f in [input_file, witness_file, proof_file, public_file]:
+    for f in [input_file, witness_file, proof_file, original_public_file, snarkjs_public_file]:
         if os.path.exists(f):
             os.remove(f)
 
-    logger.info(f"🔑 Generating aggregator proof using circuit {circuit_path} and pk {proving_key_path}...")
+    logger.info(f"🔑 Generating aggregator proof...")
     start_time = time.time()
 
     wasm_path = os.path.join(js_dir, "aggregator.wasm")
@@ -648,11 +704,16 @@ def generate_aggregator_proof(agg_inputs: dict, circuit_path: str, proving_key_p
     with open(input_file, "w") as f:
         json.dump(agg_inputs, f, indent=2)
 
-    # IMPORTANT: Write the aggregator public signals to public.json
-    # The aggregator circuit expects numClients local hashes + 1 global hash => len(ScLH) + 1 signals
-    numClients = len(agg_inputs["ScLH"])  # or just 4 if it's always 4
+    # Prepare public signals
+    numClients = len(agg_inputs["ScLH"])
     aggregator_public_signals = [str(h) for h in agg_inputs["ScLH"]] + [str(agg_inputs["gdigest"])]
-    with open(public_file, "w") as f:
+
+    # Save original public signals
+    with open(original_public_file, "w") as f:
+        json.dump(aggregator_public_signals, f)
+
+    # Create initial snarkjs public file
+    with open(snarkjs_public_file, "w") as f:
         json.dump(aggregator_public_signals, f)
 
     # Generate witness
@@ -662,23 +723,26 @@ def generate_aggregator_proof(agg_inputs: dict, circuit_path: str, proving_key_p
         raise RuntimeError("Aggregator proof generation failed during witness generation")
 
     # Generate proof
-    prove_cmd = ["snarkjs", "groth16", "prove", proving_key_path, witness_file, proof_file, public_file]
+    prove_cmd = ["snarkjs", "groth16", "prove", proving_key_path, witness_file, proof_file, snarkjs_public_file]
     prove_result = run_command(prove_cmd)
     if prove_result.returncode != 0:
         raise RuntimeError("Aggregator proof generation failed during proof generation")
 
-    if not (os.path.exists(proof_file) and os.path.exists(public_file)):
-        raise RuntimeError("Proof generation failed: proof.json or public.json not found.")
+    # Load and verify files
+    with open(proof_file) as pf:
+        proof_data = json.load(pf)
 
+    with open(original_public_file) as f:
+        original_signals = json.load(f)
+
+    with open(snarkjs_public_file) as f:
+        snarkjs_signals = json.load(f)
+
+    # Use original signals in result
     gen_time = time.time() - start_time
     logger.info(f"✅ Aggregator proof generated successfully in {gen_time:.2f}s")
 
-    with open(proof_file) as pf:
-        proof_data = json.load(pf)
-    with open(public_file) as pubf:
-        public_data = json.load(pubf)
-
-    return proof_data, public_data
+    return proof_data, original_signals
 
 class ZKPVerifier:
     def __init__(self, client_vkey_path: str, aggregator_vkey_path: str):
@@ -692,14 +756,10 @@ class ZKPVerifier:
         with open(aggregator_vkey_path, 'r') as f:
             self.aggregator_vkey = json.load(f)
 
-        # Temporary files for snarkjs verification
-        self.verification_temp = "verification_tmp.json"
-
     def prepare_client_public_inputs(self, learning_rate: float, precision: int,
-                                local_model_hash: str, global_model_hash: str) -> List[str]:
-        """Prepare public inputs according to circuit expectations."""
-        # Include all four required signals
-        scaled_lr = int(round(learning_rate * precision))  # Scale learning rate to match circuit
+                                   local_model_hash: str, global_model_hash: str) -> List[str]:
+        """Prepare public inputs for client proof verification."""
+        scaled_lr = int(round(learning_rate * precision))
         
         signals = [
             str(scaled_lr),
@@ -707,28 +767,54 @@ class ZKPVerifier:
             str(local_model_hash),
             str(global_model_hash)
         ]
+
+        # Validate signals
+        for i, signal in enumerate(signals):
+            try:
+                value = int(signal)
+                if value >= FIELD_PRIME or value < 0:
+                    raise ValueError(f"Signal {i} ({value}) outside valid range [0, FIELD_PRIME)")
+            except ValueError as e:
+                raise ValueError(f"Invalid signal {i} ({signal}): {str(e)}")
+
         logger.debug(f"Prepared public inputs: {signals}")
         return signals
 
     def prepare_aggregator_public_inputs(self, local_model_hashes: List[str],
                                        global_model_hash: str) -> List[str]:
         """Prepare public inputs for aggregator proof verification."""
-        inputs = [str(int(h)) for h in local_model_hashes] + [str(int(global_model_hash))]
-        return inputs
+        # Convert and validate all hashes
+        signals = []
+        for i, hash_val in enumerate(local_model_hashes):
+            try:
+                value = int(hash_val)
+                if value >= FIELD_PRIME or value < 0:
+                    raise ValueError(f"Local hash {i} ({value}) outside valid range")
+                signals.append(str(value))
+            except ValueError as e:
+                raise ValueError(f"Invalid local hash {i}: {str(e)}")
+
+        # Convert and validate global hash
+        try:
+            global_value = int(global_model_hash)
+            if global_value >= FIELD_PRIME or global_value < 0:
+                raise ValueError(f"Global hash ({global_value}) outside valid range")
+            signals.append(str(global_value))
+        except ValueError as e:
+            raise ValueError(f"Invalid global hash: {str(e)}")
+
+        return signals
 
     def _verify_groth16_proof(self, vkey: Dict, proof: Dict, public_signals: List[str]) -> bool:
-        """
-        Verify a Groth16 proof using snarkjs with consistent public signal handling.
-        """
+        """Verify a Groth16 proof using snarkjs with separate files for signals."""
         try:
-            # Format signals consistently
             formatted_signals = [str(signal) for signal in public_signals]
             
-            # Log the signals we're using for verification
             logger.debug("Verifying with public signals:")
             for i, signal in enumerate(formatted_signals):
                 logger.debug(f"  Signal {i}: {signal}")
             
+            # Save verification input to separate file
             verification_input = {
                 "protocol": "groth16",
                 "curve": "bn128",
@@ -738,53 +824,58 @@ class ZKPVerifier:
                 "public": formatted_signals
             }
 
-            # Save the verification data for inspection
-            debug_data = {
-                "verification_input": verification_input,
-                "vkey": vkey,
-                "original_signals": public_signals,
-                "formatted_signals": formatted_signals
-            }
-            with open("debug_verification_data.json", "w") as f:
-                json.dump(debug_data, f, indent=2)
+            verify_input_file = "verification_input.json"
+            verify_public_file = "verification_public.json"
 
-            # Write to temporary files
-            with open(self.verification_temp, 'w') as f:
+            with open(verify_input_file, 'w') as f:
                 json.dump(verification_input, f, indent=2)
 
-            # Create a proper public.json file
-            with open("public.json", "w") as f:
+            # Save public signals to separate file
+            with open(verify_public_file, 'w') as f:
                 json.dump(formatted_signals, f)
 
-            # Run verification
+            # Save verification key to debug file
+            with open("debug_vkey.json", 'w') as f:
+                json.dump(vkey, f, indent=2)
+
+            # Run verification with separate files
             verify_cmd = [
                 "snarkjs", 
                 "groth16", 
                 "verify", 
                 "--verbose",
                 "debug_vkey.json",
-                self.verification_temp,
-                "public.json"
+                verify_input_file,
+                verify_public_file
             ]
             
             logger.debug(f"Running verification command: {' '.join(verify_cmd)}")
             result = subprocess.run(verify_cmd, capture_output=True, text=True)
             
-            # Log all outputs
             logger.debug(f"Verification stdout: {result.stdout}")
             logger.debug(f"Verification stderr: {result.stderr}")
             
-            if result.returncode == 0 and "OK!" in result.stdout:
+            success = result.returncode == 0 and "OK!" in result.stdout
+            if success:
                 logger.info("✅ Cryptographic verification successful")
-                return True
             else:
                 logger.error(f"❌ Verification failed with return code {result.returncode}")
-                return False
+            
+            return success
 
         except Exception as e:
             logger.error(f"❌ Verification error: {str(e)}")
             logger.debug("Full exception:", exc_info=True)
             return False
+
+        finally:
+            # Clean up verification files
+            for f in [verify_input_file, verify_public_file, "debug_vkey.json"]:
+                if os.path.exists(f):
+                    try:
+                        os.remove(f)
+                    except Exception as e:
+                        logger.warning(f"Failed to remove {f}: {e}")
 
     def verify_client_proof(self, proof: Dict, public_signals: List[str]) -> bool:
         """Verifies a client's zero-knowledge proof against their public signals."""
@@ -835,15 +926,14 @@ class ZKPVerifier:
             return False
 
     def verify_aggregator_proof(self, proof: Dict, public_signals: List[str]) -> bool:
-        """
-        Verifies an aggregator's zero-knowledge proof against their public signals.
-        """
+        """Verifies an aggregator's zero-knowledge proof."""
         logger.info("🔍 Verifying aggregator proof...")
         try:
             # Verify proof structure
             required_proof_keys = {'pi_a', 'pi_b', 'pi_c', 'protocol'}
-            if not all(key in proof for key in required_proof_keys):
-                logger.error("❌ Proof missing required fields")
+            missing_keys = required_proof_keys - set(proof.keys())
+            if missing_keys:
+                logger.error(f"❌ Proof missing required fields: {missing_keys}")
                 return False
 
             # Verify public signals format
@@ -852,10 +942,14 @@ class ZKPVerifier:
                 return False
 
             # Verify values are within field prime
-            for signal in public_signals:
-                value = int(signal)
-                if value >= FIELD_PRIME or value < 0:
-                    logger.error(f"❌ Public signal {value} outside valid range")
+            for i, signal in enumerate(public_signals):
+                try:
+                    value = int(signal)
+                    if value >= FIELD_PRIME or value < 0:
+                        logger.error(f"❌ Public signal {i} ({value}) outside valid range")
+                        return False
+                except ValueError:
+                    logger.error(f"❌ Public signal {i} ({signal}) is not a valid integer")
                     return False
 
             # Perform cryptographic verification
@@ -872,6 +966,7 @@ class ZKPVerifier:
 
         except Exception as e:
             logger.error(f"❌ Aggregator proof verification failed: {e}")
+            logger.debug("Full exception:", exc_info=True)
             return False
 
     @staticmethod
@@ -880,15 +975,34 @@ class ZKPVerifier:
         params = []
         for param in model_state.values():
             arr = param.detach().cpu().numpy().flatten()
-            ints = [int(round(v)) for v in arr]
+            # Convert to integers and ensure within field
+            ints = [int(round(v)) % FIELD_PRIME for v in arr]
             params.extend(ints)
         h = mimc_hash(params, key=0)
         return str(h)
 
     def cleanup(self):
-        """Clean up any temporary files."""
-        if os.path.exists(self.verification_temp):
-            os.remove(self.verification_temp)
+        """Clean up any temporary verification files."""
+        temp_files = [
+            "verification_input.json",
+            "verification_public.json",
+            "debug_vkey.json",
+            "client_input.json",
+            "witness.wtns",
+            "proof.json",
+            "original_public.json",
+            "snarkjs_public.json",
+            "original_aggregator_public.json",
+            "snarkjs_aggregator_public.json"
+        ]
+        
+        for f in temp_files:
+            if os.path.exists(f):
+                try:
+                    os.remove(f)
+                    logger.debug(f"Cleaned up temporary file: {f}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove temporary file {f}: {e}")
 
 class ZKPClientWrapper:
     def __init__(self, client_circuit_path: str, client_pk_path: str, client_wasm_path: str):
@@ -915,6 +1029,16 @@ class ZKPClientWrapper:
                             local_hash: str) -> Dict:
         """Generate a training proof with debug information."""
         logger.info("🔑 Preparing inputs for client training proof...")
+        
+        # Debug log all input parameters
+        logger.debug("=== Training Proof Generation Debug ===")
+        logger.debug(f"Learning rate: {learning_rate}")
+        logger.debug(f"Precision: {precision}")
+        logger.debug(f"Global hash: {global_hash}")
+        logger.debug(f"Local hash: {local_hash}")
+        logger.debug(f"Training data shape: {training_data.shape}")
+        logger.debug(f"Labels shape: {labels.shape}")
+
         hiddenSize = 10
         inputSize = 5
         outputSize = 3
@@ -925,40 +1049,45 @@ class ZKPClientWrapper:
         lw_t = local_model.get('weight', torch.zeros((hiddenSize,inputSize))).detach().cpu().numpy().flatten()
         lb_t = local_model.get('bias', torch.zeros(hiddenSize)).detach().cpu().numpy().flatten()
 
-        # Handle different input shapes
+        # Debug log converted parameter shapes
+        logger.debug("Converted parameter shapes:")
+        logger.debug(f"gw_t shape: {gw_t.shape}")
+        logger.debug(f"gb_t shape: {gb_t.shape}")
+        logger.debug(f"lw_t shape: {lw_t.shape}")
+        logger.debug(f"lb_t shape: {lb_t.shape}")
+
+        # Ensure proper input shapes
         if training_data.dim() > 1 and training_data.size(0) > 1:
+            logger.debug("Processing batch data, selecting first sample")
             x_arr = training_data[0].cpu().numpy().flatten()
             y_arr = labels[0].cpu().numpy().flatten()
         else:
+            logger.debug("Processing single sample data")
             x_arr = training_data.cpu().numpy().flatten()
             y_arr = labels.cpu().numpy().flatten()
-
-        # Validate input sizes
-        if len(x_arr) != 5:
-            raise ValueError(f"X must be length 5, got {len(x_arr)}.")
-        if len(y_arr) != 3:
-            raise ValueError(f"Y must be length 3, got {len(y_arr)}.")
 
         # Initialize gradients
         delta2_input = [0]*outputSize
         dW_input = [0]*(hiddenSize*inputSize)
         dB_input = [0]*hiddenSize
 
-        # Convert learning rate to circuit scale
-        scaled_lr = learning_rate  # Will be scaled properly in generate_client_input
-
         # Generate client inputs with proper scaling
         client_inputs = generate_client_input(
             gw_t.tolist(), gb_t.tolist(),
             x_arr.tolist(), y_arr.tolist(),
             lw_t.tolist(), lb_t.tolist(),
-            scaled_lr, precision,
+            learning_rate, precision,
             int(global_hash), int(local_hash),
             delta2_input, dW_input, dB_input
         )
 
-        logger.info(f"🔧 Using WASM file at: {self.client_wasm_path}, js_dir: {self.client_js_dir}")
-        
+        # Debug verify all required signals are present
+        logger.debug("Verifying generated client inputs:")
+        logger.debug(f"eta: {client_inputs.get('eta')}")
+        logger.debug(f"pr: {client_inputs.get('pr')}")
+        logger.debug(f"ldigest: {client_inputs.get('ldigest')}")
+        logger.debug(f"ScGH: {client_inputs.get('ScGH')}")
+
         # Generate proof
         result = generate_client_proof(
             client_inputs, 
@@ -967,13 +1096,19 @@ class ZKPClientWrapper:
             js_dir=self.client_js_dir
         )
         
-        logger.info("✅ Client training proof generated and returned.")
-        
-        # Return complete proof results
-        return {
-            "proof": result["proof"],
-            "public": result["public"]
-        }
+        # Verify result contains all expected components
+        if not result or 'proof' not in result or 'public' not in result:
+            logger.error("Proof generation failed - incomplete result")
+            logger.error(f"Result keys: {result.keys() if result else 'None'}")
+            raise ValueError("Proof generation failed to produce complete result")
+
+        # Verify public signals
+        if len(result['public']) != 4:
+            logger.error(f"Invalid number of public signals: {len(result['public'])}")
+            raise ValueError(f"Expected 4 public signals, got {len(result['public'])}")
+
+        logger.info("✅ Client training proof generated successfully")
+        return result
 
 class ZKPAggregatorWrapper:
     def __init__(self, aggregator_circuit_path: str, aggregator_pk_path: str, aggregator_wasm_path: str):

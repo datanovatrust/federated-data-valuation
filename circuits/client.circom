@@ -1,5 +1,3 @@
-// circuits/client.circom
-
 pragma circom 2.0.0;
 
 include "mimc_hash.circom";
@@ -33,11 +31,17 @@ template WeightedSum(n) {
 }
 
 template ClientCircuit(inputSize, hiddenSize, outputSize) {
-    // Public Inputs
+    // Public Inputs (now also marked as outputs)
     signal input eta;       
     signal input pr;        
     signal input ldigest;   
     signal input ScGH;      
+    
+    // Make public inputs available as outputs
+    signal output out_eta;
+    signal output out_pr;
+    signal output out_ldigest;
+    signal output out_ScGH;
 
     // Private Inputs
     signal input GW[hiddenSize][inputSize];  
@@ -191,12 +195,17 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     localHashMatch <== localHasher.hash - ldigest;
     globalHashMatch <== globalHasher.hash - ScGH;
 
+    // Connect input signals to output signals
+    out_eta <== eta;
+    out_pr <== pr;
+    out_ldigest <== ldigest;
+    out_ScGH <== ScGH;
+
+    // Original outputs
     signal output valid_computation;
     signal output valid_hashes;
-
     valid_computation <== localHashMatch; 
     valid_hashes <== globalHashMatch;
 }
 
-// Reduced parameters for fewer constraints
 component main = ClientCircuit(5, 10, 3);
