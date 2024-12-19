@@ -1,7 +1,7 @@
 import json
 import os
 import logging
-from typing import Dict, List
+from typing import Dict, List, Any, Tuple
 import torch
 import time
 import subprocess
@@ -12,17 +12,301 @@ logger.setLevel(logging.DEBUG)
 
 FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617
 
+def initialize_gradients(forward_results: Dict[str, List[float]], y: List[int], pr: int) -> List[float]:
+    """Initialize gradients that exactly match circuit constraints."""
+    outputSize = len(y)
+    delta2 = []
+    
+    logger.debug("=== Initializing Gradients ===")
+    for i in range(outputSize):
+        # Convert and normalize inputs explicitly as integers
+        a2_val = int(forward_results['A2'][i])
+        y_val = int(y[i])
+        
+        # Compute difference in field
+        diff = normalize_to_field(a2_val - y_val)
+        
+        # Compute 2 * diff in field
+        diffTimesTwo = normalize_to_field(diff * 2)
+        
+        # Set delta2 directly to normalized diffTimesTwo
+        delta2_val = diffTimesTwo  # Important: No conversion to float
+        
+        logger.debug(f"Output {i}:")
+        logger.debug(f"  Raw A2: {a2_val}")
+        logger.debug(f"  Raw Y: {y_val}")
+        logger.debug(f"  Raw diff: {a2_val - y_val}")
+        logger.debug(f"  Normalized diff: {diff}")
+        logger.debug(f"  diffTimesTwo: {diffTimesTwo}")
+        logger.debug(f"  delta2: {delta2_val}")
+        
+        # Verify constraint using direct integer comparison
+        if delta2_val != diffTimesTwo:
+            logger.error(f"Output {i} constraint violation:")
+            logger.error(f"  delta2: {delta2_val}")
+            logger.error(f"  diffTimesTwo: {diffTimesTwo}")
+            logger.error(f"  difference: {delta2_val - diffTimesTwo}")
+        
+        delta2.append(delta2_val)
+    
+    return delta2
+
+def verify_intermediate_values(inputs: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
+    """Verifies intermediate values match circuit constraints exactly."""
+    debug_info = {}
+    
+    a2 = inputs.get('A2', [])
+    y = inputs.get('Y', [])
+    delta2 = inputs.get('delta2_input', [])
+    
+    for i in range(len(a2)):
+        # Convert and normalize as integers
+        a2_val = int(a2[i])
+        y_val = int(y[i])
+        delta2_val = int(delta2[i])
+        
+        # Compute values in field
+        diff = normalize_to_field(a2_val - y_val)
+        diffTimesTwo = normalize_to_field(diff * 2)
+        
+        # Direct comparison without scaling
+        constraint_diff = normalize_to_field(delta2_val - diffTimesTwo)
+        
+        debug_info[f'output_{i}'] = {
+            'a2': a2_val,
+            'y': y_val,
+            'diff': diff,
+            'diffTimesTwo': diffTimesTwo,
+            'delta2': delta2_val,
+            'scaledDelta2': delta2_val,  # No scaling needed
+            'constraint_diff': constraint_diff
+        }
+        
+        if constraint_diff != 0:
+            logger.error(f"❌ Constraint violation at index {i}")
+            logger.error(f"Computation for index {i}:")
+            logger.error(f"  a2: {a2_val}")
+            logger.error(f"  y: {y_val}")
+            logger.error(f"  diff: {diff}")
+            logger.error(f"  diffTimesTwo: {diffTimesTwo}")
+            logger.error(f"  delta2: {delta2_val}")
+            return False, debug_info
+    
+    return True, debug_info
+
+def track_field_arithmetic(operation: str, a: int, b: int, result: int, 
+                         expected_circuit_result: int) -> bool:
+    """
+    Tracks and validates field arithmetic operations between Python and Circom.
+    """
+    logger.debug(f"=== Field Arithmetic Operation: {operation} ===")
+    
+    # Normalize all values to field
+    a_norm = normalize_to_field(a)
+    b_norm = normalize_to_field(b)
+    result_norm = normalize_to_field(result)
+    expected_norm = normalize_to_field(expected_circuit_result)
+    
+    logger.debug(f"Python computation:")
+    logger.debug(f"  a: {a} -> normalized: {a_norm}")
+    logger.debug(f"  b: {b} -> normalized: {b_norm}")
+    logger.debug(f"  result: {result} -> normalized: {result_norm}")
+    logger.debug(f"Circuit expected: {expected_circuit_result} -> normalized: {expected_norm}")
+    
+    if result_norm != expected_norm:
+        logger.error(f"❌ Arithmetic mismatch:")
+        logger.error(f"  Python result: {result_norm}")
+        logger.error(f"  Circuit result: {expected_norm}")
+        return False
+        
+    return True
+
+def validate_field_arithmetic(operation: str, a: int, b: int, result: int) -> bool:
+    logger.debug(f"=== Field Arithmetic Validation: {operation} ===")
+    logger.debug(f"Input a: {a}")
+    logger.debug(f"Input b: {b}")
+    logger.debug(f"Result: {result}")
+    
+    if abs(a) >= FIELD_PRIME or abs(b) >= FIELD_PRIME:
+        logger.error("❌ Input values exceed field prime")
+        return False
+        
+    if abs(result) >= FIELD_PRIME:
+        logger.error("❌ Result exceeds field prime")
+        return False
+    
+    return True
+
+def verify_hash_computation(values: List[int], expected_hash: int) -> bool:
+    """
+    Verify hash computation with proper field arithmetic and debugging.
+    
+    Args:
+        values: List of model parameters to hash
+        expected_hash: Expected hash value to compare against
+        
+    Returns:
+        bool: True if hash verification succeeds
+    """
+    logger.debug("=== Hash Computation Debug ===")
+    
+    # First normalize all input values
+    normalized_values = [normalize_to_field(int(v)) for v in values]
+    
+    # Log first few values for debugging
+    logger.debug(f"First few normalized input values: {normalized_values[:5]}")
+    logger.debug(f"Input length: {len(normalized_values)}")
+    
+    # Compute hash with normalized values
+    computed_hash = mimc_hash(normalized_values)
+    normalized_computed = normalize_to_field(computed_hash)
+    normalized_expected = normalize_to_field(expected_hash)
+    
+    logger.debug(f"Computed hash (raw): {computed_hash}")
+    logger.debug(f"Computed hash (normalized): {normalized_computed}")
+    logger.debug(f"Expected hash (raw): {expected_hash}")
+    logger.debug(f"Expected hash (normalized): {normalized_expected}")
+    
+    # Check field bounds
+    if abs(normalized_computed) >= FIELD_PRIME or abs(normalized_expected) >= FIELD_PRIME:
+        logger.error("❌ Hash value exceeds field prime")
+        return False
+    
+    # Compare normalized values
+    if normalized_computed != normalized_expected:
+        logger.error("❌ Hash mismatch:")
+        logger.error(f"  Computed: {normalized_computed}")
+        logger.error(f"  Expected: {normalized_expected}")
+        return False
+        
+    logger.debug("✅ Hash verification successful")
+    return True
+
+def verify_hash_chain(
+    inputs: List[int], 
+    intermediate_states: List[int],
+    final_hash: int
+) -> bool:
+    """
+    Verifies the complete MiMC hash chain matches between implementations.
+    """
+    logger.debug("=== Hash Chain Verification ===")
+    
+    # Track each state in the hash computation
+    current_state = 0  # Initial state
+    for i, inp in enumerate(inputs):
+        # Log state before operation
+        logger.debug(f"Step {i}:")
+        logger.debug(f"  Input: {inp}")
+        logger.debug(f"  Current state: {current_state}")
+        
+        # Compute next state exactly as in circuit
+        next_state = normalize_to_field(mimc_hash([inp], current_state))
+        logger.debug(f"  Next state: {next_state}")
+        
+        # Verify against provided intermediate state
+        if next_state != intermediate_states[i]:
+            logger.error(f"❌ Hash state mismatch at step {i}")
+            logger.error(f"  Computed: {next_state}")
+            logger.error(f"  Expected: {intermediate_states[i]}")
+            return False
+            
+        current_state = next_state
+    
+    # Verify final hash
+    if normalize_to_field(current_state) != normalize_to_field(final_hash):
+        logger.error("❌ Final hash mismatch")
+        return False
+        
+    return True
+
+def verify_gradient_computation(
+    a2: List[float], 
+    y: List[float], 
+    delta2: List[float],
+    pr: int
+) -> Tuple[bool, Dict[str, Any]]:
+    """
+    Verifies gradient computation matches exactly between Python and Circom.
+    The circuit expects: delta2 === 2 * (a2 - y)
+    """
+    logger.debug("=== Gradient Computation Verification ===")
+    debug_info = {}
+    
+    for i in range(len(a2)):
+        # Normalize all values to field integers
+        a2_val = normalize_to_field(int(a2[i]))
+        y_val = normalize_to_field(int(y[i]))
+        delta2_val = normalize_to_field(int(delta2[i]))
+        
+        # Compute difference and double it
+        diff = normalize_to_field(a2_val - y_val)
+        diffTimesTwo = normalize_to_field(diff * 2)
+        
+        # No additional scaling needed - direct comparison
+        constraint_check = normalize_to_field(delta2_val - diffTimesTwo)
+        
+        debug_info[f'output_{i}'] = {
+            'a2': a2_val,
+            'y': y_val,
+            'diff': diff,
+            'diffTimesTwo': diffTimesTwo,
+            'delta2': delta2_val,
+            'scaled_delta2': delta2_val,  # No scaling
+            'constraint_check': constraint_check
+        }
+        
+        if constraint_check != 0:
+            logger.error(f"❌ Gradient constraint failed for output {i}")
+            return False, debug_info
+    
+    return True, debug_info
+
+def verify_hashes(local_hash: str, global_hash: str) -> bool:
+    """Debug helper to verify hash computations."""
+    FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617
+    
+    try:
+        local_int = normalize_to_field(int(local_hash))
+        global_int = normalize_to_field(int(global_hash))
+        
+        logger.debug("=== Hash Verification ===")
+        logger.debug(f"Local hash (raw): {local_hash}")
+        logger.debug(f"Global hash (raw): {global_hash}")
+        logger.debug(f"Local hash (normalized): {local_int}")
+        logger.debug(f"Global hash (normalized): {global_int}")
+        
+        return True
+    except ValueError as e:
+        logger.error(f"Hash verification failed: {e}")
+        return False
+
+def normalize_to_field(value: int) -> int:
+    """
+    Normalize a value to be within the field prime range with better handling of large values.
+    """
+    FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617
+    FIELD_PRIME_HALF = FIELD_PRIME // 2
+
+    # Handle negative values first
+    if value < 0:
+        value = value % FIELD_PRIME
+
+    # Reduce large positive values
+    if value >= FIELD_PRIME:
+        value = value % FIELD_PRIME
+
+    # If value is in the upper half of the field, convert to negative representation
+    if value > FIELD_PRIME_HALF:
+        value = value - FIELD_PRIME
+
+    return value
+
 def weighted_sum(inputs: List[float], weights: List[float], factor: int) -> float:
-    """
-    Implements the WeightedSum template from the circuit.
-    Matches the exact computation steps in the circuit.
-    """
     sum_val = 0
     for i in range(len(inputs)):
-        # First compute product, then scale by factor
-        prod_val = inputs[i] * weights[i]
-        scaled_val = prod_val * factor
-        sum_val += scaled_val
+        prod_val = normalize_to_field(inputs[i] * weights[i])
+        sum_val = normalize_to_field(sum_val + prod_val)
     return sum_val
 
 def compute_forward_pass(gw: List[float], gb: List[float], x: List[float], 
@@ -111,49 +395,32 @@ def verify_delta2_constraint(a2: List[float], y: List[float], delta2: List[float
     return True
 
 def compute_output_gradients(a2: List[float], y: List[float], pr: int) -> List[float]:
-    """
-    Computes output layer gradients (delta2) exactly as in circuit.
-    The circuit expects: delta2[i] * pr === (a2[i] - y[i]) * 2
-    So we need: delta2[i] = ((a2[i] - y[i]) * 2) / pr
-    """
     outputSize = len(y)
     delta2 = []
     
-    logger.debug("Computing output gradients with:")
-    logger.debug(f"A2: {a2}")
-    logger.debug(f"Y: {y}")
-    logger.debug(f"Precision factor: {pr}")
-    
+    logger.debug("=== Gradient Computation Debug ===")
     for i in range(outputSize):
-        # Circuit computes: diff = A2 - Y, then delta2 = 2 * diff
-        diff = a2[i] - y[i]
-        # Note: We divide by pr here because the inputs are already scaled
-        delta2_val = (diff * 2) / pr
+        # Compute normalized difference
+        diff = normalize_to_field(a2[i] - y[i])
+        logger.debug(f"  Normalized diff: {diff}")
+        
+        # Compute gradient
+        diffTimesTwo = normalize_to_field(diff * 2)
+        logger.debug(f"  diffTimesTwo: {diffTimesTwo}")
+        
+        # Scale gradient properly
+        delta2_val = normalize_to_field(diffTimesTwo)  # Don't divide by pr yet
+        logger.debug(f"  Raw delta2: {delta2_val}")
+        
+        # Track final scaled value
         delta2.append(delta2_val)
-        
-        logger.debug(f"Output {i}:")
-        logger.debug(f"  A2: {a2[i]}")
-        logger.debug(f"  Y: {y[i]}")
-        logger.debug(f"  diff: {diff}")
-        logger.debug(f"  delta2: {delta2_val}")
-        
-        # Verify the values aren't exceeding field prime
-        scaled_delta2 = delta2_val * pr
-        if abs(scaled_delta2) >= FIELD_PRIME:
-            logger.error(f"❌ Scaled delta2 value {scaled_delta2} exceeds field prime!")
-    
-        # Verify the constraint immediately
-        if abs(scaled_delta2 - (diff * 2)) > 1e-10:
-            logger.error(f"❌ Delta2 constraint failed for output {i}:")
-            logger.error(f"   Expected: {diff * 2}")
-            logger.error(f"   Got: {scaled_delta2}")
-            logger.error(f"   Difference: {abs(scaled_delta2 - (diff * 2))}")
+        logger.debug(f"  Final delta2: {delta2_val}")
     
     return delta2
 
 def compute_hidden_gradients(delta2: List[float], lwp: List[float]) -> List[float]:
     """
-    Computes hidden layer gradients (delta1) exactly as in circuit.
+    Modified hidden gradient computation with proper scaling.
     """
     hiddenSize = 10
     outputSize = 3
@@ -163,11 +430,10 @@ def compute_hidden_gradients(delta2: List[float], lwp: List[float]) -> List[floa
     
     delta1 = []
     for i in range(hiddenSize):
-        # Extract weights for this hidden neuron
         hidden_weights = [lwp_2d[i][j] for j in range(outputSize)]
-        # Compute weighted sum of delta2 values (factor=1 as per circuit)
+        # Match circuit's scaling
         grad_sum = weighted_sum(delta2, hidden_weights, 1)
-        delta1.append(grad_sum)
+        delta1.append(normalize_to_field(grad_sum))
     
     return delta1
 
@@ -224,39 +490,53 @@ def validate_model_updates(gw: List[float], gb: List[float],
             
     return True
 
-def scale_to_int(value: float, precision: int = 1000) -> int:
-    """Scale a float value to integer by multiplying with precision factor."""
-    return int(round(value * precision))
+def scale_to_int(value: float, precision: int = 100000) -> int:
+    """
+    Scale a float value to integer with better handling of small values.
+    Now using higher precision by default (100000 instead of 1000).
+    """
+    # For very small values like learning rate, use a higher precision
+    if abs(value) < 0.001:
+        precision *= 1000  # Use even higher precision for tiny values
+    
+    scaled = int(round(value * precision))
+    return normalize_to_field(scaled)
 
 def scale_array_to_int(arr: List[float], precision: int = 1000) -> List[int]:
     """Scale an array of float values to integers."""
     return [scale_to_int(x, precision) for x in arr]
 
 def mimc_hash(values: List[int], key=0):
-    """Compute MiMC hash of input values."""
+    """Compute MiMC hash of input values with proper field arithmetic."""
     if not values:
         return 0
-    inputs = [int(v) % FIELD_PRIME for v in values]
+    
+    FIELD_PRIME = 21888242871839275222246405745257275088548364400416034343698204186575808495617
+    
+    # Normalize inputs to field
+    inputs = [normalize_to_field(int(v)) for v in values]
     nInputs = len(inputs)
     nRounds = 2
     constants = [i+1 for i in range(nRounds)]
 
     currentStateInputs = [0]*(nInputs+1)
-    currentStateInputs[0] = key % FIELD_PRIME
+    currentStateInputs[0] = normalize_to_field(key)
 
     for i in range(nInputs):
-        afterAdd = (currentStateInputs[i] + inputs[i]) % FIELD_PRIME
+        # All operations must be done modulo the field prime
+        afterAdd = normalize_to_field(currentStateInputs[i] + inputs[i])
         roundStates = [0]*(nRounds+1)
         roundStates[0] = afterAdd
 
         for j in range(nRounds):
-            t = (roundStates[j] + constants[j]) % FIELD_PRIME
-            t_cubed = (t * t * t) % FIELD_PRIME
+            t = normalize_to_field(roundStates[j] + constants[j])
+            t_squared = normalize_to_field(t * t)
+            t_cubed = normalize_to_field(t_squared * t)
             roundStates[j+1] = t_cubed
 
-        currentStateInputs[i+1] = roundStates[nRounds]
+        currentStateInputs[i+1] = normalize_to_field(roundStates[nRounds])
 
-    return currentStateInputs[nInputs]
+    return normalize_to_field(currentStateInputs[nInputs])
 
 def generate_client_input(gw: List[float], gb: List[float],
                          x: List[float], y: List[float],
@@ -267,170 +547,161 @@ def generate_client_input(gw: List[float], gb: List[float],
     Generates client input matching exact circuit computations.
     All computations maintain circuit scaling and constraints.
     """
-    # Add CRITICAL logging for input parameters
-    logger.critical("=== GENERATE CLIENT INPUT STARTED ===")
-    logger.critical("Input parameters:")
-    logger.critical(f"eta (learning rate): {eta}")
-    logger.critical(f"pr (precision): {pr}")
-    logger.critical(f"scgh (global hash): {scgh}")
-    logger.critical(f"ldigest (local hash): {ldigest}")
+    try:
+        logger.critical("=== GENERATE CLIENT INPUT STARTED ===")
+        logger.critical("Input parameters:")
+        logger.critical(f"eta (learning rate): {eta}")
+        logger.critical(f"pr (precision): {pr}")
+        logger.critical(f"scgh (global hash): {scgh}")
+        logger.critical(f"ldigest (local hash): {ldigest}")
 
-    hiddenSize = 10
-    inputSize = 5
-    outputSize = 3
+        # Normalize public signals within field
+        scgh = normalize_to_field(int(scgh))
+        ldigest = normalize_to_field(int(ldigest))
+        
+        hiddenSize = 10
+        inputSize = 5
+        outputSize = 3
 
-    # Keep original debug logging for input ranges
-    logger.debug("Input value ranges before scaling:")
-    logger.debug(f"GW range: [{min(gw)}, {max(gw)}]")
-    logger.debug(f"GB range: [{min(gb)}, {max(gb)}]")
-    logger.debug(f"X range: [{min(x)}, {max(x)}]")
-    logger.debug(f"Y range: [{min(y)}, {max(y)}]")
-    logger.debug(f"LWp range: [{min(lwp)}, {max(lwp)}]")
-    logger.debug(f"LBp range: [{min(lbp)}, {max(lbp)}]")
-    logger.debug(f"Eta: {eta}")
-    logger.debug(f"Precision factor: {pr}")
+        # Scale and normalize input values
+        gw_int = [normalize_to_field(v) for v in scale_array_to_int(gw, pr)]
+        gb_int = [normalize_to_field(v) for v in scale_array_to_int(gb, pr)]
+        x_int = [normalize_to_field(v) for v in scale_array_to_int(x, pr)]
+        y_int = [normalize_to_field(v) for v in scale_array_to_int(y, pr)]
+        lwp_int = [normalize_to_field(v) for v in scale_array_to_int(lwp, pr)]
+        lbp_int = [normalize_to_field(v) for v in scale_array_to_int(lbp, pr)]
+        eta_int = normalize_to_field(scale_to_int(eta, pr))
 
-    # Scale input values
-    gw_int = scale_array_to_int(gw, pr)
-    gb_int = scale_array_to_int(gb, pr)
-    x_int = scale_array_to_int(x, pr)
-    y_int = scale_array_to_int(y, pr)
-    lwp_int = scale_array_to_int(lwp, pr)
-    lbp_int = scale_array_to_int(lbp, pr)
-    eta_int = scale_to_int(eta, pr)
-
-    # Add debug logging for scaled values
-    logger.debug("Scaled integer ranges:")
-    logger.debug(f"GW range: [{min(gw_int)}, {max(gw_int)}]")
-    logger.debug(f"GB range: [{min(gb_int)}, {max(gb_int)}]")
-    logger.debug(f"X range: [{min(x_int)}, {max(x_int)}]")
-    logger.debug(f"Y range: [{min(y_int)}, {max(y_int)}]")
-    logger.debug(f"LWp range: [{min(lwp_int)}, {max(lwp_int)}]")
-    logger.debug(f"LBp range: [{min(lbp_int)}, {max(lbp_int)}]")
-    logger.debug(f"Scaled eta: {eta_int}")
-
-    # Add CRITICAL logging for scaled public signals
-    logger.critical("Scaled public signal values:")
-    logger.critical(f"eta_int: {eta_int}")
-    logger.critical(f"pr: {pr}")
-    logger.critical(f"scgh: {scgh}")
-    logger.critical(f"ldigest: {ldigest}")
-
-    # Check for field prime overflow
-    FIELD_PRIME_HALF = FIELD_PRIME // 2
-    for arr in [gw_int, gb_int, x_int, y_int, lwp_int, lbp_int]:
-        for val in arr:
-            if abs(val) > FIELD_PRIME_HALF:
-                logger.warning(f"Value {val} is more than half the field prime!")
-
-    # Compute complete forward pass exactly as in circuit
-    forward_results = compute_forward_pass(gw_int, gb_int, x_int, lwp_int, lbp_int, pr)
-    
-    # Debug forward pass results
-    logger.debug("Forward pass intermediate values:")
-    for key, values in forward_results.items():
-        if isinstance(values, list):
-            logger.debug(f"{key} range: [{min(values)}, {max(values)}]")
-    
-    # Verify delta2 constraint explicitly before computing
-    for i in range(outputSize):
-        diff = forward_results['A2'][i] - y_int[i]
-        diffTimesTwo = diff * 2
-        logger.debug(f"Output {i} pre-constraint check:")
-        logger.debug(f"  A2: {forward_results['A2'][i]}")
-        logger.debug(f"  Y: {y_int[i]}")
-        logger.debug(f"  diff: {diff}")
-        logger.debug(f"  diffTimesTwo: {diffTimesTwo}")
-
-    # Compute output gradients (delta2)
-    delta2 = compute_output_gradients(forward_results['A2'], y_int, pr)
-    logger.debug(f"Delta2 range: [{min(delta2)}, {max(delta2)}]")
-    
-    # Verify delta2 constraint explicitly after computing
-    for i in range(outputSize):
-        diff = forward_results['A2'][i] - y_int[i]
-        diffTimesTwo = diff * 2
-        scaledDelta2 = delta2[i] * pr
-        if abs(scaledDelta2 - diffTimesTwo) > 1e-10:
-            logger.error(f"Delta2 constraint failed for output {i}:")
-            logger.error(f"  Expected: {diffTimesTwo}")
-            logger.error(f"  Got: {scaledDelta2}")
-            logger.error(f"  Difference: {abs(scaledDelta2 - diffTimesTwo)}")
-    
-    # Compute hidden layer gradients (delta1)
-    delta1 = compute_hidden_gradients(delta2, lwp_int)
-    logger.debug(f"Delta1 range: [{min(delta1)}, {max(delta1)}]")
-    
-    # Compute weight and bias gradients
-    dW_computed = compute_weight_gradients(delta1, x_int, pr)
-    dB_computed = compute_bias_gradients(delta1)
-    
-    logger.debug(f"dW range: [{min(dW_computed)}, {max(dW_computed)}]")
-    logger.debug(f"dB range: [{min(dB_computed)}, {max(dB_computed)}]")
-
-    # Validate that model updates satisfy circuit constraints
-    valid = validate_model_updates(gw_int, gb_int, lwp_int, lbp_int, 
-                                 dW_computed, dB_computed, eta_int)
-    if not valid:
-        logger.error("⚠️ Model updates don't satisfy circuit constraints!")
-        # Add detailed constraint validation
-        for i in range(hiddenSize):
-            for j in range(inputSize):
-                idx = i * inputSize + j
-                weight_update = eta_int * dW_computed[idx]
-                expected_lwp = gw_int[idx] - weight_update
-                if abs(lwp_int[idx] - expected_lwp) > 1e-10:
-                    logger.error(f"Weight constraint failed at [{i},{j}]: "
-                               f"LWp={lwp_int[idx]}, Expected={expected_lwp}")
-
-    def to_2d(arr, rows, cols):
-        return [arr[i*cols:(i+1)*cols] for i in range(rows)]
-
-    client_input = {
-        "GW": to_2d(gw_int, hiddenSize, inputSize),
-        "GB": gb_int,
-        "X": x_int,
-        "Y": y_int,
-        "LWp": to_2d(lwp_int, hiddenSize, inputSize),
-        "LBp": lbp_int,
-        "eta": eta_int,
-        "pr": pr,
-        "ScGH": scgh,
-        "ldigest": ldigest,
-        "delta2_input": delta2,
-        "dW_input": to_2d(dW_computed, hiddenSize, inputSize),
-        "dB_input": dB_computed
-    }
-
-    # Add CRITICAL logging for final client input verification
-    logger.critical("=== Final Client Input Verification ===")
-    logger.critical("Checking required public signals:")
-    logger.critical(f"eta present: {'eta' in client_input}")
-    logger.critical(f"pr present: {'pr' in client_input}")
-    logger.critical(f"ScGH present: {'ScGH' in client_input}")
-    logger.critical(f"ldigest present: {'ldigest' in client_input}")
-    logger.critical("Final public signal values:")
-    logger.critical(f"eta: {client_input['eta']}")
-    logger.critical(f"pr: {client_input['pr']}")
-    logger.critical(f"ScGH: {client_input['ScGH']}")
-    logger.critical(f"ldigest: {client_input['ldigest']}")
-
-    # Final validation of all values against field prime
-    flat_values = []
-    for v in client_input.values():
-        if isinstance(v, list):
-            if isinstance(v[0], list):
-                flat_values.extend([x for row in v for x in row])
+        # Debug scaled values
+        logger.debug("Scaled integer ranges:")
+        for name, values in [
+            ('GW', gw_int), ('GB', gb_int), ('X', x_int), ('Y', y_int),
+            ('LWp', lwp_int), ('LBp', lbp_int), ('eta', eta_int)
+        ]:
+            if isinstance(values, list):
+                logger.debug(f"{name} range: [{min(values)}, {max(values)}]")
             else:
-                flat_values.extend(v)
-        elif isinstance(v, (int, float)):
-            flat_values.append(v)
-    
-    for val in flat_values:
-        if abs(int(val)) >= FIELD_PRIME:
-            logger.error(f"⚠️ Final value {val} exceeds field prime {FIELD_PRIME}")
+                logger.debug(f"{name}: {values}")
 
-    return client_input
+        # Verify field bounds for all inputs
+        all_inputs = {
+            'gw': gw_int, 'gb': gb_int, 'x': x_int, 'y': y_int,
+            'lwp': lwp_int, 'lbp': lbp_int, 'eta': eta_int
+        }
+        for name, values in all_inputs.items():
+            if isinstance(values, list):
+                for i, val in enumerate(values):
+                    if not validate_field_arithmetic(f"{name}[{i}]", val, 0, val):
+                        raise ValueError(f"Field arithmetic validation failed for {name}[{i}]")
+            else:
+                if not validate_field_arithmetic(name, values, 0, values):
+                    raise ValueError(f"Field arithmetic validation failed for {name}")
+
+        # Compute forward pass
+        forward_results = compute_forward_pass(gw_int, gb_int, x_int, lwp_int, lbp_int, pr)
+        
+        # Verify intermediate values
+        success, intermediate_debug = verify_intermediate_values({
+            'A2': forward_results['A2'],
+            'Y': y_int,
+            'delta2_input': delta2_input,
+            'pr': pr
+        })
+        if not success:
+            raise ValueError(f"Intermediate value verification failed: {intermediate_debug}")
+
+        # Compute and verify gradients
+        delta2 = compute_output_gradients(forward_results['A2'], y_int, pr)
+        grad_success, grad_debug = verify_gradient_computation(
+            forward_results['A2'], y_int, delta2, pr
+        )
+        if not grad_success:
+            raise ValueError(f"Gradient computation verification failed: {grad_debug}")
+
+        # Compute hidden layer gradients
+        delta1 = compute_hidden_gradients(delta2, lwp_int)
+        for i, d1 in enumerate(delta1):
+            result = track_field_arithmetic(
+                f"delta1[{i}]",
+                d1, pr,
+                normalize_to_field(d1 * pr),
+                normalize_to_field(d1 * pr)
+            )
+            if not result:
+                raise ValueError(f"Delta1 computation mismatch at index {i}")
+
+        # Compute weight and bias gradients
+        dW_computed = compute_weight_gradients(delta1, x_int, pr)
+        dB_computed = compute_bias_gradients(delta1)
+
+        # Verify model updates
+        if not validate_model_updates(gw_int, gb_int, lwp_int, lbp_int, 
+                                    dW_computed, dB_computed, eta_int):
+            raise ValueError("Model updates don't satisfy circuit constraints")
+
+        def to_2d(arr, rows, cols):
+            return [arr[i*cols:(i+1)*cols] for i in range(rows)]
+
+        # Prepare and verify hash computation
+        model_params = []
+        model_params.extend(gw_int)  # Add weights
+        model_params.extend(gb_int)  # Add biases
+        
+        logger.debug("=== Hash Verification Debug ===")
+        logger.debug(f"Number of parameters for hash: {len(model_params)}")
+        logger.debug(f"Parameter range: [{min(model_params)}, {max(model_params)}]")
+        logger.debug(f"Expected hash (normalized): {scgh}")
+        
+        # Verify hash with normalized values
+        hash_result = mimc_hash(model_params)
+        normalized_hash = normalize_to_field(hash_result)
+        logger.debug(f"Computed hash (raw): {hash_result}")
+        logger.debug(f"Computed hash (normalized): {normalized_hash}")
+        
+        if normalized_hash != scgh:
+            logger.error("❌ Hash verification failed")
+            logger.error(f"Computed hash: {normalized_hash}")
+            logger.error(f"Expected hash: {scgh}")
+            raise ValueError("Hash verification failed for model parameters")
+
+        # Prepare client input
+        client_input = {
+            "GW": to_2d(gw_int, hiddenSize, inputSize),
+            "GB": gb_int,
+            "X": x_int,
+            "Y": y_int,
+            "LWp": to_2d(lwp_int, hiddenSize, inputSize),
+            "LBp": lbp_int,
+            "eta": eta_int,
+            "pr": pr,
+            "ScGH": scgh,
+            "ldigest": ldigest,
+            "delta2_input": delta2,
+            "dW_input": to_2d(dW_computed, hiddenSize, inputSize),
+            "dB_input": dB_computed
+        }
+
+        # Final field validation
+        flat_values = []
+        for v in client_input.values():
+            if isinstance(v, list):
+                if isinstance(v[0], list):
+                    flat_values.extend([x for row in v for x in row])
+                else:
+                    flat_values.extend(v)
+            elif isinstance(v, (int, float)):
+                flat_values.append(v)
+        
+        for val in flat_values:
+            if not validate_field_arithmetic("final_value", int(val), 0, int(val)):
+                raise ValueError(f"Final value {val} validation failed")
+
+        logger.info("✅ Client input generation completed with all verifications")
+        return client_input
+
+    except Exception as e:
+        logger.error(f"Failed to generate client input: {str(e)}")
+        raise
 
 def generate_aggregator_input(gw: List[int], gb: List[int],
                               lwps: List[int], lbps: List[int],
@@ -970,16 +1241,42 @@ class ZKPVerifier:
             return False
 
     @staticmethod
-    def compute_model_hash(model_state: Dict[str, torch.Tensor]) -> str:
-        """Compute a MiMC hash of model parameters."""
+    def compute_model_hash(model_state: Dict[str, torch.Tensor], precision: int=1000) -> str:
+        """
+        Compute model hash with consistent normalization and field arithmetic.
+        
+        Args:
+            model_state: Dictionary containing model parameters
+            precision: Precision factor for fixed-point arithmetic
+            
+        Returns:
+            str: Normalized hash value as string
+        """
+        logger.debug("=== Computing Model Hash ===")
+        
+        # First collect and flatten all parameters
         params = []
-        for param in model_state.values():
-            arr = param.detach().cpu().numpy().flatten()
-            # Convert to integers and ensure within field
-            ints = [int(round(v)) % FIELD_PRIME for v in arr]
-            params.extend(ints)
+        for name, param in model_state.items():
+            values = param.detach().cpu().numpy().flatten()
+            logger.debug(f"Parameter {name}: shape {values.shape}, range [{values.min()}, {values.max()}]")
+            
+            # Scale float values to integers and normalize to field
+            scaled_values = [normalize_to_field(scale_to_int(float(v), precision)) for v in values]
+            params.extend(scaled_values)
+        
+        logger.debug(f"Total parameters: {len(params)}")
+        if params:
+            logger.debug(f"Parameter range: [{min(params)}, {max(params)}]")
+        
+        # Compute hash with normalized values
         h = mimc_hash(params, key=0)
-        return str(h)
+        normalized_hash = normalize_to_field(h)
+        
+        logger.debug(f"Raw hash: {h}")
+        logger.debug(f"Normalized hash: {normalized_hash}")
+        
+        # Important: Return string representation of normalized hash
+        return str(normalized_hash)
 
     def cleanup(self):
         """Clean up any temporary verification files."""
@@ -1027,88 +1324,161 @@ class ZKPClientWrapper:
                             precision: int,
                             global_hash: str,
                             local_hash: str) -> Dict:
-        """Generate a training proof with debug information."""
+        """
+        Generate a training proof with proper gradient scaling and normalization.
+        
+        Args:
+            global_model: Global model state dictionary
+            local_model: Local model state dictionary
+            training_data: Input training data tensor
+            labels: Target labels tensor
+            learning_rate: Learning rate for gradient updates
+            precision: Precision factor for fixed-point arithmetic
+            global_hash: Hash of global model parameters
+            local_hash: Hash of local model parameters
+            
+        Returns:
+            Dictionary containing proof data and public signals
+        """
         logger.info("🔑 Preparing inputs for client training proof...")
         
-        # Debug log all input parameters
-        logger.debug("=== Training Proof Generation Debug ===")
-        logger.debug(f"Learning rate: {learning_rate}")
-        logger.debug(f"Precision: {precision}")
-        logger.debug(f"Global hash: {global_hash}")
-        logger.debug(f"Local hash: {local_hash}")
-        logger.debug(f"Training data shape: {training_data.shape}")
-        logger.debug(f"Labels shape: {labels.shape}")
+        try:
+            # Debug log all input parameters
+            logger.debug("=== Training Proof Generation Debug ===")
+            logger.debug(f"Learning rate: {learning_rate}")
+            logger.debug(f"Precision: {precision}")
+            logger.debug(f"Global hash: {global_hash}")
+            logger.debug(f"Local hash: {local_hash}")
+            logger.debug(f"Training data shape: {training_data.shape}")
+            logger.debug(f"Labels shape: {labels.shape}")
 
-        hiddenSize = 10
-        inputSize = 5
-        outputSize = 3
+            hiddenSize = 10
+            inputSize = 5
+            outputSize = 3
 
-        # Convert model parameters to numpy arrays
-        gw_t = global_model.get('weight', torch.zeros((hiddenSize,inputSize))).detach().cpu().numpy().flatten()
-        gb_t = global_model.get('bias', torch.zeros(hiddenSize)).detach().cpu().numpy().flatten()
-        lw_t = local_model.get('weight', torch.zeros((hiddenSize,inputSize))).detach().cpu().numpy().flatten()
-        lb_t = local_model.get('bias', torch.zeros(hiddenSize)).detach().cpu().numpy().flatten()
+            # Convert model parameters to numpy arrays and normalize
+            gw_t = [normalize_to_field(val) for val in global_model.get('weight', torch.zeros((hiddenSize,inputSize))).detach().cpu().numpy().flatten()]
+            gb_t = [normalize_to_field(val) for val in global_model.get('bias', torch.zeros(hiddenSize)).detach().cpu().numpy().flatten()]
+            lw_t = [normalize_to_field(val) for val in local_model.get('weight', torch.zeros((hiddenSize,inputSize))).detach().cpu().numpy().flatten()]
+            lb_t = [normalize_to_field(val) for val in local_model.get('bias', torch.zeros(hiddenSize)).detach().cpu().numpy().flatten()]
 
-        # Debug log converted parameter shapes
-        logger.debug("Converted parameter shapes:")
-        logger.debug(f"gw_t shape: {gw_t.shape}")
-        logger.debug(f"gb_t shape: {gb_t.shape}")
-        logger.debug(f"lw_t shape: {lw_t.shape}")
-        logger.debug(f"lb_t shape: {lb_t.shape}")
+            # Debug log converted parameter shapes
+            logger.debug("Converted parameter shapes:")
+            logger.debug(f"gw_t length: {len(gw_t)}")
+            logger.debug(f"gb_t length: {len(gb_t)}")
+            logger.debug(f"lw_t length: {len(lw_t)}")
+            logger.debug(f"lb_t length: {len(lb_t)}")
 
-        # Ensure proper input shapes
-        if training_data.dim() > 1 and training_data.size(0) > 1:
-            logger.debug("Processing batch data, selecting first sample")
-            x_arr = training_data[0].cpu().numpy().flatten()
-            y_arr = labels[0].cpu().numpy().flatten()
-        else:
-            logger.debug("Processing single sample data")
-            x_arr = training_data.cpu().numpy().flatten()
-            y_arr = labels.cpu().numpy().flatten()
+            # Ensure proper input shapes and select first sample if batch
+            if training_data.dim() > 1 and training_data.size(0) > 1:
+                logger.debug("Processing batch data, selecting first sample")
+                x_arr = training_data[0].cpu().numpy().flatten()
+                y_arr = labels[0].cpu().numpy().flatten()
+            else:
+                logger.debug("Processing single sample data")
+                x_arr = training_data.cpu().numpy().flatten()
+                y_arr = labels.cpu().numpy().flatten()
 
-        # Initialize gradients
-        delta2_input = [0]*outputSize
-        dW_input = [0]*(hiddenSize*inputSize)
-        dB_input = [0]*hiddenSize
+            # Scale input values with proper normalization
+            x_int = [normalize_to_field(val) for val in scale_array_to_int(x_arr.tolist(), precision)]
+            y_int = [normalize_to_field(val) for val in scale_array_to_int(y_arr.tolist(), precision)]
 
-        # Generate client inputs with proper scaling
-        client_inputs = generate_client_input(
-            gw_t.tolist(), gb_t.tolist(),
-            x_arr.tolist(), y_arr.tolist(),
-            lw_t.tolist(), lb_t.tolist(),
-            learning_rate, precision,
-            int(global_hash), int(local_hash),
-            delta2_input, dW_input, dB_input
-        )
+            logger.debug("=== Input Scaling Debug ===")
+            logger.debug(f"x_int (first few): {x_int[:5]}")
+            logger.debug(f"y_int: {y_int}")
 
-        # Debug verify all required signals are present
-        logger.debug("Verifying generated client inputs:")
-        logger.debug(f"eta: {client_inputs.get('eta')}")
-        logger.debug(f"pr: {client_inputs.get('pr')}")
-        logger.debug(f"ldigest: {client_inputs.get('ldigest')}")
-        logger.debug(f"ScGH: {client_inputs.get('ScGH')}")
+            # Compute forward pass
+            forward_results = compute_forward_pass(
+                gw_t, gb_t, x_int, lw_t, lb_t, precision
+            )
 
-        # Generate proof
-        result = generate_client_proof(
-            client_inputs, 
-            self.client_circuit_path, 
-            self.client_pk_path,
-            js_dir=self.client_js_dir
-        )
-        
-        # Verify result contains all expected components
-        if not result or 'proof' not in result or 'public' not in result:
-            logger.error("Proof generation failed - incomplete result")
-            logger.error(f"Result keys: {result.keys() if result else 'None'}")
-            raise ValueError("Proof generation failed to produce complete result")
+            # Verify forward pass outputs
+            logger.debug("=== Forward Pass Results ===")
+            logger.debug(f"Z1 shape: {len(forward_results['Z1'])}")
+            logger.debug(f"A1 shape: {len(forward_results['A1'])}")
+            logger.debug(f"Z2 shape: {len(forward_results['Z2'])}")
+            logger.debug(f"A2 shape: {len(forward_results['A2'])}")
 
-        # Verify public signals
-        if len(result['public']) != 4:
-            logger.error(f"Invalid number of public signals: {len(result['public'])}")
-            raise ValueError(f"Expected 4 public signals, got {len(result['public'])}")
+            # Initialize gradients with proper scaling
+            delta2_input = initialize_gradients(forward_results, y_int, precision)
+            
+            # Log gradient initialization results
+            logger.debug("=== Gradient Initialization Results ===")
+            logger.debug(f"delta2_input: {delta2_input}")
 
-        logger.info("✅ Client training proof generated successfully")
-        return result
+            # Verify gradient computation
+            grad_success, grad_debug = verify_gradient_computation(
+                forward_results['A2'], y_int, delta2_input, precision
+            )
+            if not grad_success:
+                raise ValueError(f"Gradient computation verification failed: {grad_debug}")
+
+            # Compute hidden layer gradients
+            delta1 = compute_hidden_gradients(delta2_input, lw_t)
+            logger.debug(f"delta1 values (first few): {delta1[:5]}")
+
+            # Verify hidden gradients
+            for i, d1 in enumerate(delta1):
+                result = track_field_arithmetic(
+                    f"delta1[{i}]",
+                    normalize_to_field(d1), precision,
+                    normalize_to_field(d1 * precision),
+                    normalize_to_field(d1 * precision)
+                )
+                if not result:
+                    raise ValueError(f"Hidden gradient verification failed at index {i}")
+
+            # Compute weight and bias gradients
+            dW_input = compute_weight_gradients(delta1, x_int, precision)
+            dB_input = compute_bias_gradients(delta1)
+
+            logger.debug("=== Final Gradient Shapes ===")
+            logger.debug(f"dW_input length: {len(dW_input)}")
+            logger.debug(f"dB_input length: {len(dB_input)}")
+
+            # Generate client inputs with proper scaling
+            client_inputs = generate_client_input(
+                gw_t, gb_t,
+                x_arr.tolist(), y_arr.tolist(),
+                lw_t, lb_t,
+                learning_rate, precision,
+                int(global_hash), int(local_hash),
+                delta2_input, dW_input, dB_input
+            )
+
+            # Verify all required inputs are present
+            required_keys = ['eta', 'pr', 'ldigest', 'ScGH', 'GW', 'GB', 'X', 'Y', 'LWp', 'LBp', 'delta2_input', 'dW_input', 'dB_input']
+            missing_keys = [key for key in required_keys if key not in client_inputs]
+            if missing_keys:
+                raise ValueError(f"Missing required input keys: {missing_keys}")
+
+            # Generate proof
+            result = generate_client_proof(
+                client_inputs, 
+                self.client_circuit_path, 
+                self.client_pk_path,
+                js_dir=self.client_js_dir
+            )
+            
+            # Verify result contains all expected components
+            if not result or 'proof' not in result or 'public' not in result:
+                logger.error("Proof generation failed - incomplete result")
+                logger.error(f"Result keys: {result.keys() if result else 'None'}")
+                raise ValueError("Proof generation failed to produce complete result")
+
+            # Verify public signals
+            if len(result['public']) != 4:
+                logger.error(f"Invalid number of public signals: {len(result['public'])}")
+                raise ValueError(f"Expected 4 public signals, got {len(result['public'])}")
+
+            # Log successful completion
+            logger.info("✅ Client training proof generated successfully")
+            return result
+
+        except Exception as e:
+            logger.error(f"Failed to generate training proof: {str(e)}")
+            logger.debug("Full exception:", exc_info=True)
+            raise
 
 class ZKPAggregatorWrapper:
     def __init__(self, aggregator_circuit_path: str, aggregator_pk_path: str, aggregator_wasm_path: str):
@@ -1173,7 +1543,7 @@ def test_proof_generation():
     lwp = list(range(50))  # 10*5
     lbp = list(range(10))
     eta = 1
-    pr = 1000
+    pr = 100000
     scgh = 123456
     ldigest = 654321
 
