@@ -507,7 +507,7 @@ def scale_array_to_int(arr: List[float], precision: int = 1000) -> List[int]:
     return [scale_to_int(x, precision) for x in arr]
 
 def mimc_hash(values: List[int], key=0):
-    """Compute MiMC hash of input values with proper field arithmetic."""
+    """Compute MiMC hash of input values with proper field arithmetic and updated constants."""
     if not values:
         return 0
     
@@ -517,13 +517,14 @@ def mimc_hash(values: List[int], key=0):
     inputs = [normalize_to_field(int(v)) for v in values]
     nInputs = len(inputs)
     nRounds = 2
-    constants = [i+1 for i in range(nRounds)]
+    # Update constants to match the Circom code
+    # For example, if circom uses constants[0]=7919, constants[1]=7927:
+    constants = [7919, 7927]
 
     currentStateInputs = [0]*(nInputs+1)
     currentStateInputs[0] = normalize_to_field(key)
 
     for i in range(nInputs):
-        # All operations must be done modulo the field prime
         afterAdd = normalize_to_field(currentStateInputs[i] + inputs[i])
         roundStates = [0]*(nRounds+1)
         roundStates[0] = afterAdd

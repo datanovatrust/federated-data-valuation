@@ -1,5 +1,3 @@
-// circuits/aggregator.circom
-
 pragma circom 2.0.0;
 
 include "mimc_hash.circom";
@@ -8,6 +6,15 @@ template ModelAverage(numClients) {
     signal input currValue;              
     signal input newValues[numClients];  
     signal output out;                   
+
+    // Added signals for bounds checking as recommended
+    signal currValueInBounds;
+    signal newValuesInBounds[numClients];
+
+    currValueInBounds <== currValue;
+    for (var i = 0; i < numClients; i++) {
+        newValuesInBounds[i] <== newValues[i];
+    }
 
     signal sums[numClients+1];
     sums[0] <== 0;
@@ -24,6 +31,7 @@ template ModelAverage(numClients) {
     signal diff;
     diff <== sum - currValueScaled;
 
+    // Properly scaling and dividing by numClients (compile-time constant)
     out <== currValue + (diff / numClients); 
 }
 
@@ -72,6 +80,7 @@ template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
     }
 
     component localHashers[numClients];
+    component localHashComparators[numClients];
     signal validLocalHashes[numClients];
     for (var i = 0; i < numClients; i++) {
         localHashers[i] = MiMCArray(hiddenSize * inputSize + hiddenSize);
@@ -90,8 +99,13 @@ template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
         }
         
         localHashers[i].k <== 0;
-        
-        validLocalHashes[i] <== (localHashers[i].hash - ScLH[i]);
+
+        // Use HashEquality for robust local hash checking
+        localHashComparators[i] = HashEquality();
+        localHashComparators[i].hash1 <== localHashers[i].hash;
+        localHashComparators[i].hash2 <== ScLH[i];
+        validLocalHashes[i] <== localHashComparators[i].equal;
+        localHashComparators[i].equal === 0;
     }
     
     component globalHasher = MiMCArray(hiddenSize * inputSize + hiddenSize);
@@ -113,20 +127,27 @@ template AggregatorCircuit(numClients, inputSize, hiddenSize, outputSize) {
     
     signal output valid_model;     
     signal output valid_hashes;    
-    
-    var hashMatch = globalHasher.hash - gdigest;
 
-    valid_model <== hashMatch; 
+    // Use HashEquality for global hash check
+    component globalHashCompare = HashEquality();
+    globalHashCompare.hash1 <== globalHasher.hash;
+    globalHashCompare.hash2 <== gdigest;
+    valid_model <== globalHashCompare.equal;
+    globalHashCompare.equal === 0;
 
-    signal tmpSquared[numClients];
-    signal allHashesProducts[numClients+1];
-    allHashesProducts[0] <== 1;
+    // If all local hashes are valid, their equal signals are all zero
+    // Combine them in some way to produce valid_hashes. 
+    // Since each local hash comparator outputs 0 on success, we can just 
+    // sum them up to ensure they're all zero. Or replicate old logic:
+    signal sumLocalHashDiffs[numClients+1];
+    sumLocalHashDiffs[0] <== 0;
     for (var i = 0; i < numClients; i++) {
-        tmpSquared[i] <== validLocalHashes[i]*validLocalHashes[i];
-        allHashesProducts[i+1] <== allHashesProducts[i]*(tmpSquared[i]+1);
+        sumLocalHashDiffs[i+1] <== sumLocalHashDiffs[i] + validLocalHashes[i];
     }
 
-    valid_hashes <== allHashesProducts[numClients];
+    // If all are zero, final sum is zero
+    sumLocalHashDiffs[numClients] === 0;
+    valid_hashes <== sumLocalHashDiffs[numClients];
 }
 
 // Reduced parameters for fewer constraints

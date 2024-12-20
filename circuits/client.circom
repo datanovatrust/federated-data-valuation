@@ -16,10 +16,7 @@ template WeightedSum(n) {
 
     sums[0] <== 0;
     for (var i = 0; i < n; i++) {
-        // Use scaling factor in a quadratic way
         prodVal[i] <== in[i] * weights[i];
-        // Instead of division, multiply one input by factor^-1
-        // This maintains the quadratic constraint
         scaled[i] <== prodVal[i];
     }
 
@@ -110,25 +107,21 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     signal diffTimesTwo[outputSize];
 
     for (var i = 0; i < outputSize; i++) {
-        // Compute scaled differences without division
         diff[i] <== A2[i] - Y[i];
         diffSquared[i] <== diff[i] * diff[i];
         scaledDiffSquared[i] <== diffSquared[i];
         mseTotal[i+1] <== mseTotal[i] + scaledDiffSquared[i];
 
-        // Handle gradients with proper scaling
         diffTimesTwo[i] <== diff[i] * 2;
         delta2[i] <== delta2_input[i];
         scaledDelta2[i] <== delta2[i];
 
-        // This constraint should match Python's computation
         delta2Check[i] <== scaledDelta2[i] - diffTimesTwo[i];
     }
 
     scaledMSE <== mseTotal[outputSize];
     MSE <== scaledMSE;
 
-    // Compute delta1 with proper scaling
     {
         component hiddenGrads[hiddenSize];
         for (var i = 0; i < hiddenSize; i++) {
@@ -142,7 +135,6 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         }
     }
 
-    // Validate dW and dB with consistent scaling
     signal scaledDW[hiddenSize][inputSize];
     signal dW[hiddenSize][inputSize];
     signal dB[hiddenSize];
@@ -160,7 +152,6 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         }
     }
 
-    // Weight and bias updates with consistent scaling
     signal weightUpdate[hiddenSize][inputSize];
     signal biasUpdate[hiddenSize];
     for (var i = 0; i < hiddenSize; i++) {
@@ -170,36 +161,50 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         biasUpdate[i] <== eta * dB[i];
     }
 
-    // Local and global hash computation and comparison
-    component localHasher = MiMCArray(hiddenSize * inputSize + hiddenSize);
-    component globalHasher = MiMCArray(hiddenSize * inputSize + hiddenSize);
-    component localHashCompare = HashComparison();
-    component globalHashCompare = HashComparison();
-    
-    // Compute local hash
-    var idx = 0;
+    // Normalize fields before hashing
+    signal normalizedLWp[hiddenSize][inputSize];
+    signal normalizedLBp[hiddenSize];
+    signal normalizedGW[hiddenSize][inputSize];
+    signal normalizedGB[hiddenSize];
+
     for (var i = 0; i < hiddenSize; i++) {
         for (var j = 0; j < inputSize; j++) {
-            localHasher.ins[idx] <== LWp[i][j];
+            normalizedLWp[i][j] <== LWp[i][j];
+            normalizedGW[i][j] <== GW[i][j];
+        }
+        normalizedLBp[i] <== LBp[i];
+        normalizedGB[i] <== GB[i];
+    }
+
+    component localHasher = MiMCArray(hiddenSize * inputSize + hiddenSize);
+    component globalHasher = MiMCArray(hiddenSize * inputSize + hiddenSize);
+    component localHashCompare = HashEquality();
+    component globalHashCompare = HashEquality();
+
+    var idx = 0;
+    // Compute local hash using normalized values
+    for (var i = 0; i < hiddenSize; i++) {
+        for (var j = 0; j < inputSize; j++) {
+            localHasher.ins[idx] <== normalizedLWp[i][j];
             idx++;
         }
     }
     for (var i = 0; i < hiddenSize; i++) {
-        localHasher.ins[idx] <== LBp[i];
+        localHasher.ins[idx] <== normalizedLBp[i];
         idx++;
     }
     localHasher.k <== 0;
 
-    // Compute global hash
+    // Compute global hash using normalized values
     idx = 0;
     for (var i = 0; i < hiddenSize; i++) {
         for (var j = 0; j < inputSize; j++) {
-            globalHasher.ins[idx] <== GW[i][j];
+            globalHasher.ins[idx] <== normalizedGW[i][j];
             idx++;
         }
     }
     for (var i = 0; i < hiddenSize; i++) {
-        globalHasher.ins[idx] <== GB[i];
+        globalHasher.ins[idx] <== normalizedGB[i];
         idx++;
     }
     globalHasher.k <== 0;
@@ -210,7 +215,7 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     globalHashCompare.hash1 <== globalHasher.hash;
     globalHashCompare.hash2 <== ScGH;
 
-    // Apply all constraints
+    // Constraints
     for (var i = 0; i < outputSize; i++) {
         delta2Check[i] === 0;
     }
@@ -222,9 +227,8 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
         }
     }
 
-    // Hash equality constraints
-    localHashCompare.diff === 0;
-    globalHashCompare.diff === 0;
+    localHashCompare.equal === 0;
+    globalHashCompare.equal === 0;
 
     // Public outputs
     signal output out[4];

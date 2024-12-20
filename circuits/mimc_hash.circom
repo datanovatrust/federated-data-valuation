@@ -2,10 +2,17 @@ pragma circom 2.0.0;
 
 function get_mimc_constants(n) {
     var constants[2];
-    for (var i = 0; i < n; i++) {
-        constants[i] = i + 1;
-    }
+    // Updated constants with larger primes for better randomness
+    constants[0] = 7919;  // prime
+    constants[1] = 7927;  // next prime
     return constants;
+}
+
+template NormalizeField() {
+    signal input in;
+    signal output out;
+    // Basic normalization: ensures out is a field element equal to in (mod p)
+    out <== in;
 }
 
 template ModAdd() {
@@ -38,7 +45,6 @@ template MiMCSponge(nInputs) {
     signal currentStateInputs[nInputs+1];
     currentStateInputs[0] <== k;
 
-    // Declare all signals needed for round computations outside loops:
     signal roundStates[nInputs][nRounds+1];
     signal tvals[nInputs][nRounds];
     signal tSquaredvals[nInputs][nRounds];
@@ -49,7 +55,6 @@ template MiMCSponge(nInputs) {
         adders[i].a <== currentStateInputs[i];
         adders[i].b <== ins[i];
 
-        // Initial round state for this input
         roundStates[i][0] <== adders[i].out;
 
         for (var j = 0; j < nRounds; j++) {
