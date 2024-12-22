@@ -18,7 +18,7 @@ import json
 
 from src.utils.ipfs_utils import upload_to_ipfs
 from src.utils.blockchain_utils import BlockchainClient
-from src.utils.zkp_utils import ZKPVerifier, ZKPClientWrapper, ZKPAggregatorWrapper
+from src.utils.zkp_utils_v2 import ZKPVerifier, ZKPClientWrapper, ZKPAggregatorWrapper
 
 import torch.nn.functional as F
 
