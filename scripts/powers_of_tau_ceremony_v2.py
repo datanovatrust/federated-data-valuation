@@ -3,11 +3,12 @@
 """
 scripts/powers_of_tau_ceremony_v2.py
 
-A minimal script to run the Groth16 Powers of Tau setup
-(Phase 1 and Phase 2) for the v2 circuits. It:
+A minimal script to run the Groth16 Powers of Tau setup (Phase 1 and Phase 2)
+for the v2 circuits. It:
 
 1. Checks if final.ptau already exists.
-   - If yes, it skips the ceremony, assuming it's already generated.
+   - If yes, and --force is NOT used, it skips the ceremony.
+   - If --force is used, it removes final.ptau and regenerates it.
 2. Otherwise, runs:
    - snarkjs powersoftau new bn128 <ptau_exponent> pot_0000.ptau
    - snarkjs powersoftau contribute pot_0000.ptau pot_0001.ptau ...
@@ -17,12 +18,14 @@ A minimal script to run the Groth16 Powers of Tau setup
 
 Typical usage:
     python scripts/powers_of_tau_ceremony_v2.py
+    python scripts/powers_of_tau_ceremony_v2.py --force
 """
 
 import os
 import sys
 import subprocess
 import logging
+import argparse
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,10 +42,24 @@ def run_command(cmd, desc=""):
     logger.info(result.stdout)
 
 def main():
+    parser = argparse.ArgumentParser(description="Groth16 Powers of Tau Ceremony for v2 circuits.")
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force regeneration of final.ptau even if it already exists."
+    )
+    args = parser.parse_args()
+
     final_ptau = "final.ptau"
+
+    # Check if final.ptau exists
     if os.path.exists(final_ptau):
-        logger.info(f"{final_ptau} already exists. Skipping ceremony.")
-        return
+        if not args.force:
+            logger.info(f"{final_ptau} already exists. Skipping ceremony. Use --force to regenerate.")
+            return
+        else:
+            logger.info(f"--force supplied. Removing existing {final_ptau} and regenerating.")
+            os.remove(final_ptau)
 
     # Phase 1
     logger.info("=== Starting Powers of Tau Ceremony for v2 circuits ===")
@@ -63,7 +80,9 @@ def main():
     cmd_beacon = [
         "snarkjs", "powersoftau", "beacon",
         ptau_1, ptau_beacon,
-        "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f", "10", "--name=BeaconStep"
+        "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "10",
+        "--name=BeaconStep"
     ]
     run_command(cmd_beacon, desc="Beacon phase")
 

@@ -192,12 +192,19 @@ template ClientCircuit(inputSize, hiddenSize, outputSize) {
     localCompare.hash2 <== ldigest;
     localCompare.equal === 0;
 
-    // optional outputs
+    // Output signals
     signal output out[4];
     out[0] <== eta;
     out[1] <== pr;
     out[2] <== ldigest;
     out[3] <== scgh;
+
+    // Debug outputs: differences for scgh, ldigest
+    signal output checkGlobalDiff;
+    checkGlobalDiff <== globalCompare.hash1 - globalCompare.hash2;
+
+    signal output checkLocalDiff;
+    checkLocalDiff <== localCompare.hash1 - localCompare.hash2;
 }
 
 // Instantiate
