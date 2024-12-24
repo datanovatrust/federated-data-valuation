@@ -345,6 +345,9 @@ class ZKPClientWrapperV2:
             "Y": input_y
         }
 
+        # Add debug logging
+        debug_circuit_inputs(circuit_input)
+
         logger.debug("Final client circuit input:")
         logger.debug(json.dumps(circuit_input, indent=2))
 
@@ -424,3 +427,60 @@ class ZKPAggregatorWrapperV2:
 
     def verify_aggregator_proof(self, proof_dict: Dict[str, Any]) -> bool:
         return verify_proof(self.vkey_path, proof_dict)
+
+def debug_circuit_inputs(circuit_input: Dict[str, Any], field_prime: int = FIELD_PRIME) -> None:
+    """Add detailed debugging for circuit inputs"""
+    logger.debug("\n=== DETAILED CIRCUIT INPUT DEBUGGING ===")
+    
+    # Check scalar values
+    for key in ['eta', 'pr', 'ldigest', 'scgh']:
+        if key in circuit_input:
+            val = int(circuit_input[key])
+            logger.debug(f"{key}: {val}")
+            if val >= field_prime:
+                logger.error(f"WARNING: {key} exceeds field size!")
+
+    # Check array dimensions
+    if 'GW' in circuit_input:
+        gw = circuit_input['GW']
+        logger.debug(f"GW dimensions: {len(gw)}x{len(gw[0]) if gw else 0}")
+        
+    if 'GB' in circuit_input:
+        gb = circuit_input['GB']
+        logger.debug(f"GB dimensions: {len(gb)}")
+        
+    if 'LWp' in circuit_input:
+        lwp = circuit_input['LWp']
+        logger.debug(f"LWp dimensions: {len(lwp)}x{len(lwp[0]) if lwp else 0}")
+        
+    if 'LBp' in circuit_input:
+        lbp = circuit_input['LBp']
+        logger.debug(f"LBp dimensions: {len(lbp)}")
+        
+    if 'X' in circuit_input:
+        x = circuit_input['X']
+        logger.debug(f"X dimensions: {len(x)}")
+        
+    if 'Y' in circuit_input:
+        y = circuit_input['Y']
+        logger.debug(f"Y dimensions: {len(y)}")
+
+    # Check for any values exceeding field size
+    def check_array_values(arr, name):
+        if isinstance(arr, list):
+            for i, val in enumerate(arr):
+                if isinstance(val, list):
+                    check_array_values(val, f"{name}[{i}]")
+                else:
+                    try:
+                        val_int = int(val)
+                        if val_int >= field_prime:
+                            logger.error(f"WARNING: {name}[{i}] = {val_int} exceeds field size!")
+                    except ValueError:
+                        logger.error(f"WARNING: Could not convert {name}[{i}] = {val} to integer!")
+
+    for key, value in circuit_input.items():
+        if isinstance(value, list):
+            check_array_values(value, key)
+
+    logger.debug("=== END DETAILED CIRCUIT INPUT DEBUGGING ===\n")

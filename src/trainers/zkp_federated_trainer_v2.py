@@ -121,17 +121,16 @@ class ZKPFederatedTrainerV2:
         aggregator_wasm_path: str = "./aggregator_js/aggregator.wasm",
         aggregator_zkey_path: str = "./aggregator_0000.zkey",
         aggregator_vkey_path: str = "./build/circuits/aggregator_vkey.json",
-        device: str = None
+        device: str = None,
+        debug_dir: str = None
     ):
-        """
-        Setup the FL environment with specified circuit artifacts and number of clients.
-        """
         self.num_clients = num_clients
         self.input_dim = input_dim
         self.hidden_dim = hidden_dim
-        self.output_dim = output_dim  # not strictly used in DummyNet; just for example
+        self.output_dim = output_dim
         self.precision = precision
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.debug_dir = debug_dir
 
         # ZKP wrappers
         self.client_wrapper = ZKPClientWrapperV2(
@@ -150,6 +149,8 @@ class ZKPFederatedTrainerV2:
         self.global_model = None
 
         logger.info(f"ZKPFederatedTrainerV2 initialized on device={self.device}.")
+        if debug_dir:
+            logger.info(f"Debug output will be saved to: {debug_dir}")
 
     def create_dummy_data(self):
         """
@@ -303,17 +304,17 @@ class ZKPFederatedTrainerV2:
         self,
         fl_rounds: int = 3,
         client_epochs: int = 1,
-        lr: float = 0.01
+        lr: float = 0.01,
+        debug_dir: str = None
     ):
         """
-        Main Federated Loop:
-          - For multiple rounds
-            - Each client trains
-            - Generate & verify client proof
-            - Aggregator collects valid local updates
-            - Aggregator generates & verifies aggregator proof
-            - Aggregator updates global model
+        Main Federated Loop with debugging support
         """
+        # Update debug directory if provided
+        if debug_dir:
+            self.debug_dir = debug_dir
+            logger.info(f"Updated debug directory to: {debug_dir}")
+
         if not self.clients:
             self.create_dummy_data()
         if self.global_model is None:
@@ -322,6 +323,12 @@ class ZKPFederatedTrainerV2:
         logger.info(f"==== Starting FL with {fl_rounds} rounds, {self.num_clients} clients each round ====")
 
         for round_i in range(fl_rounds):
+            round_debug_dir = None
+            if self.debug_dir:
+                round_debug_dir = os.path.join(self.debug_dir, f"round_{round_i}")
+                os.makedirs(round_debug_dir, exist_ok=True)
+                logger.info(f"Created debug directory for round {round_i}: {round_debug_dir}")
+
             logger.info(f"\n--- Round {round_i+1}/{fl_rounds} ---")
 
             # 1) Compute old global hash
@@ -330,7 +337,7 @@ class ZKPFederatedTrainerV2:
             # 2) Each client trains locally + produce ZKP
             verified_local_models = []
             verified_local_hashes = []
-            for client in self.clients:
+            for client_idx, client in enumerate(self.clients):
                 self.local_training_step(client, epochs=client_epochs, lr=lr)
 
                 # compute new local model hash
@@ -340,6 +347,12 @@ class ZKPFederatedTrainerV2:
                 client_circuit_input = self.create_client_circuit_input(
                     client, old_global_hash, new_local_hash, lr
                 )
+
+                # Set up client-specific debug directory
+                client_debug_dir = None
+                if round_debug_dir:
+                    client_debug_dir = os.path.join(round_debug_dir, f"client_{client_idx}")
+                    os.makedirs(client_debug_dir, exist_ok=True)
 
                 # generate proof
                 proof_dict = self.client_wrapper.generate_training_proof(
@@ -351,7 +364,8 @@ class ZKPFederatedTrainerV2:
                     input_lwp=client_circuit_input["LWp"],
                     input_lbp=client_circuit_input["LBp"],
                     input_x=client_circuit_input["X"],
-                    input_y=client_circuit_input["Y"]
+                    input_y=client_circuit_input["Y"],
+                    debug_dir=client_debug_dir
                 )
 
                 # verify off-chain
@@ -367,13 +381,10 @@ class ZKPFederatedTrainerV2:
                 logger.warning("No valid local models found this round; global model remains the same.")
                 continue
 
-            # 3) Aggregator builds aggregator circuit input, proves correct averaging
-            # For demonstration, we do a naive average in Python
+            # 3) Aggregator proves correct averaging
             new_global_sd = self.average_models(verified_local_models)
-            # compute new global hash
             updated_global_hash = compute_model_hash(new_global_sd, self.precision)
 
-            # aggregator circuit input
             aggregator_input = self.create_aggregator_circuit_input(
                 old_global_sd=self.global_model.state_dict(),
                 verified_local_sds=verified_local_models,
@@ -381,6 +392,12 @@ class ZKPFederatedTrainerV2:
                 updated_global_sd=new_global_sd,
                 updated_global_hash=updated_global_hash
             )
+
+            # Set up aggregator debug directory
+            agg_debug_dir = None
+            if round_debug_dir:
+                agg_debug_dir = os.path.join(round_debug_dir, "aggregator")
+                os.makedirs(agg_debug_dir, exist_ok=True)
 
             # aggregator proof
             agg_proof_dict = self.aggregator_wrapper.generate_aggregation_proof(
@@ -391,7 +408,8 @@ class ZKPFederatedTrainerV2:
                 lwps=aggregator_input["LWp"],
                 lbps=aggregator_input["LBp"],
                 gwp=aggregator_input["GWp"],
-                gbp=aggregator_input["GBp"]
+                gbp=aggregator_input["GBp"],
+                debug_dir=agg_debug_dir
             )
 
             # verify aggregator proof

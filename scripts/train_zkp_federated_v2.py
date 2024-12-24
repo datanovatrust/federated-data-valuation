@@ -32,6 +32,10 @@ from src.trainers.zkp_federated_trainer_v2 import ZKPFederatedTrainerV2
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
+# In train_zkp_federated_v2.py, add:
+debug_dir = "debug_output"
+os.makedirs(debug_dir, exist_ok=True)
+
 def main():
     parser = argparse.ArgumentParser(description="ZKP Federated Learning (v2) Demo")
     parser.add_argument("--rounds", type=int, default=3, help="Number of FL rounds.")
@@ -96,7 +100,8 @@ def main():
         client_vkey_path=args.client_vkey,
         aggregator_wasm_path=args.aggregator_wasm,
         aggregator_zkey_path=args.aggregator_zkey,
-        aggregator_vkey_path=args.aggregator_vkey
+        aggregator_vkey_path=args.aggregator_vkey,
+        debug_dir=debug_dir
     )
 
     # Create synthetic data
@@ -109,7 +114,8 @@ def main():
     trainer.train(
         fl_rounds=args.rounds,
         client_epochs=args.epochs,
-        lr=args.lr
+        lr=args.lr,
+        debug_dir=debug_dir
     )
 
     logger.info("=== ZKP Federated Learning (v2) finished ===")
