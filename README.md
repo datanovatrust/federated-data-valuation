@@ -547,4 +547,4 @@ We've integrated a live monitoring dashboard using **TensorBoard** to visualize 
 
 ---
 
-We hope you enjoy these new features! If you have any suggestions or encounter any issues, please let us know. Happy coding! 💻🎉
+I hope you enjoy these new features! If you have any suggestions or encounter any issues, please let me know. Happy coding! 💻🎉
