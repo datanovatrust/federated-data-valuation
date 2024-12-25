@@ -32,6 +32,7 @@ import tempfile
 from typing import List, Dict, Any, Optional
 import torch
 import shutil
+import numpy as np
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -55,6 +56,34 @@ def float_to_fixed(val: float, precision: int) -> int:
 def tensor_to_fixed(tensor: torch.Tensor, precision: int) -> List[int]:
     arr = tensor.detach().cpu().numpy().flatten()
     return [float_to_fixed(float(v), precision) for v in arr]
+
+def tensor_to_field(tensor: torch.Tensor) -> torch.Tensor:
+    """Convert tensor values to field elements."""
+    with torch.no_grad():
+        # Convert to int64 numpy array
+        np_arr = tensor.detach().cpu().numpy().astype(np.int64)
+        # Normalize to field
+        field_arr = np.mod(np_arr, FIELD_PRIME)
+        # Back to tensor
+        return torch.from_numpy(field_arr).to(tensor.device)
+
+def safe_float_to_fixed(val: float, precision: int) -> int:
+    """Safely convert float to fixed point, handling large values."""
+    try:
+        if not np.isfinite(val):
+            return 0
+        # First truncate to avoid overflow
+        truncated = float(np.clip(val, -1e9, 1e9))
+        scaled = int(round(truncated * precision))
+        return normalize_to_field(scaled)
+    except (OverflowError, ValueError):
+        logger.warning(f"Overflow in float_to_fixed, val={val}, precision={precision}")
+        return 0
+
+def safe_tensor_to_fixed(tensor: torch.Tensor, precision: int) -> List[int]:
+    """Safely convert tensor to fixed point values."""
+    arr = tensor.detach().cpu().numpy().flatten()
+    return [safe_float_to_fixed(float(v), precision) for v in arr]
 
 
 # =============================================================================
@@ -120,7 +149,7 @@ def prepare_aggregator_public_inputs(
 def compute_model_hash(model_state: Dict[str, torch.Tensor], precision: int) -> int:
     all_fixed = []
     for param_name, param_tensor in model_state.items():
-        param_fixed = tensor_to_fixed(param_tensor, precision)
+        param_fixed = safe_tensor_to_fixed(param_tensor, precision)
         all_fixed.extend(param_fixed)
 
     hval = mimc_hash_array(all_fixed, key=0)

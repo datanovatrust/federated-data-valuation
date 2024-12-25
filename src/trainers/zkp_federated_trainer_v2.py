@@ -40,7 +40,11 @@ from src.utils.zkp_utils_v2 import (
     ZKPAggregatorWrapperV2,
     compute_model_hash,
     prepare_client_public_inputs,
-    prepare_aggregator_public_inputs
+    prepare_aggregator_public_inputs,
+    float_to_fixed,
+    normalize_to_field,
+    FIELD_PRIME,
+    tensor_to_field
 )
 
 logger = logging.getLogger(__name__)
@@ -50,32 +54,30 @@ logger.setLevel(logging.DEBUG)
 class DummyNet(torch.nn.Module):
     """
     Simple one-layer feedforward net with no activation.
-    Matches the shape:
-      - hiddenSize=10, inputSize=5, outputSize=3 
-      but in practice we'll store as:
-        weight: [hiddenSize, inputSize]
-        bias:   [hiddenSize]
-      then for the "output layer," we'd do something else. 
-    For demonstration, we treat it as a single layer.
+    Maintains floating point weights for gradients but handles integer conversion for field arithmetic.
     """
     def __init__(self, input_dim=5, output_dim=10):
         super(DummyNet, self).__init__()
-        # We'll store weights in shape [output_dim, input_dim]
-        # We'll store biases in shape [output_dim]
+        # Initialize as float32 for gradients
         self.weight = torch.nn.Parameter(torch.zeros((output_dim, input_dim)))
         self.bias = torch.nn.Parameter(torch.zeros(output_dim))
+        self.true_output_dim = min(output_dim, 3)
+
+    def get_quantized_params(self):
+        """Get integer-quantized parameters for field arithmetic"""
+        with torch.no_grad():
+            w_int = torch.round(self.weight).to(torch.int64)
+            b_int = torch.round(self.bias).to(torch.int64)
+        return w_int, b_int
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        For demonstration, assume x has shape [batch, input_dim].
-        Output shape => [batch, output_dim].
-        No activation, so output = x @ W^T + b
+        Forward pass handling both integer and float inputs.
+        Returns floating point outputs for gradient computation.
         """
-        # x: [batch, input_dim]
-        # W: [output_dim, input_dim]
-        # b: [output_dim]
-        # out: [batch, output_dim]
-        return x.matmul(self.weight.T) + self.bias
+        # Convert input to float if needed
+        x_f = x.float() if x.dtype == torch.int64 else x
+        return x_f.matmul(self.weight.T) + self.bias
 
 
 class LocalClientV2:
@@ -185,34 +187,54 @@ class ZKPFederatedTrainerV2:
 
     def initialize_global_model(self):
         """
-        Create a dummy global model that matches the shape used in the circuit (like hiddenDim=10, inputDim=5).
-        We'll store it in self.global_model.
+        Initialize model with safe field values.
         """
         net = DummyNet(input_dim=self.input_dim, output_dim=self.hidden_dim).to(self.device)
-        # Just random initialization
-        torch.nn.init.normal_(net.weight, mean=0.0, std=0.1)
-        torch.nn.init.constant_(net.bias, 0.0)
+        
+        # Use a smaller scale to avoid overflow
+        init_scale = min(self.precision / 100.0, 1000.0)
+        
+        with torch.no_grad():
+            # Initialize weights with smaller values
+            torch.nn.init.uniform_(net.weight, -0.1, 0.1)
+            net.weight.data *= init_scale
+            net.weight.data = torch.round(net.weight.data)
+            
+            # Initialize biases
+            torch.nn.init.uniform_(net.bias, -0.1, 0.1)
+            net.bias.data *= init_scale
+            net.bias.data = torch.round(net.bias.data)
+            
+            # Convert to field values
+            net.weight.data = tensor_to_field(net.weight.data)
+            net.bias.data = tensor_to_field(net.bias.data)
+            
+            # Convert large field values to smaller representations
+            net.weight.data = torch.remainder(net.weight.data, 1e6).float()
+            net.bias.data = torch.remainder(net.bias.data, 1e6).float()
+        
         self.global_model = net
-
-        logger.info("Global model (DummyNet) initialized with random weights.")
+        
+        logger.info(f"Global model initialized with field-normalized weights (precision={self.precision})")
+        logger.debug(f"Weight range: [{net.weight.min().item():.2f}, {net.weight.max().item():.2f}]")
+        logger.debug(f"Bias range: [{net.bias.min().item():.2f}, {net.bias.max().item():.2f}]")
 
     def local_training_step(self, client: LocalClientV2, epochs: int = 1, lr: float = 0.01):
         """
-        A minimal training step for demonstration.
-        We'll treat the client's data_x/data_y as a small dataset.
+        Training step with safe field arithmetic.
         """
         if client.model is None:
-            # copy global model to local
             local_net = DummyNet(self.input_dim, self.hidden_dim).to(self.device)
             local_net.load_state_dict(self.global_model.state_dict())
             client.model = local_net
 
-        # simple single-epoch training
         local_net = client.model
         optimizer = torch.optim.SGD(local_net.parameters(), lr=lr)
-        criterion = torch.nn.CrossEntropyLoss()  # though the circuit uses MSE logic, this is just a placeholder
+        criterion = torch.nn.MSELoss()
 
-        # We'll do a small dataloader
+        # Use a smaller learning rate scaling to avoid overflow
+        scaled_lr = min(lr * self.precision / 100.0, 1000.0)
+
         ds = TensorDataset(client.data_x, client.data_y)
         loader = DataLoader(ds, batch_size=4, shuffle=True)
 
@@ -221,16 +243,36 @@ class ZKPFederatedTrainerV2:
             for xb, yb in loader:
                 xb = xb.to(self.device)
                 yb = yb.to(self.device)
+                
+                # Scale inputs safely
+                xb_scaled = torch.round(torch.clamp(xb * self.precision / 100.0, -1e6, 1e6))
+                
+                # Forward pass
+                outputs = local_net(xb_scaled)
+                outputs = outputs[:, :self.output_dim]
+                
+                # Create safe targets
+                y_onehot = torch.zeros(yb.size(0), self.output_dim, device=self.device)
+                y_onehot.scatter_(1, yb.unsqueeze(1), self.precision / 100.0)
+                
+                # Compute loss
+                loss = criterion(outputs, y_onehot)
+                
                 optimizer.zero_grad()
-                outputs = local_net(xb)  # shape [batch, hidden_dim]
-                # We'll do some hacky approach: yb in [0..2], but net outputs size=10
-                # So let's do a sub-slice or quick cross-entropy
-                # In reality, you'd properly adapt the circuit for multi-layer usage.
-                loss = criterion(outputs, yb % self.hidden_dim)  # just to keep it in range
                 loss.backward()
-                optimizer.step()
+                
+                # Safe parameter updates
+                with torch.no_grad():
+                    for param in local_net.parameters():
+                        param.grad *= scaled_lr
+                        param.data -= param.grad
+                        # Round and normalize to field
+                        param.data = torch.round(param.data)
+                        param.data = tensor_to_field(param.data)
+                        # Keep values manageable
+                        param.data = torch.remainder(param.data, 1e6).float()
 
-        logger.debug(f"Client {client.client_id} local training done. Last batch loss={loss.item():.4f}")
+            logger.debug(f"Client {client.client_id} epoch complete. Loss={loss.item():.4f}")
 
     def create_client_circuit_input(
         self,
@@ -240,64 +282,83 @@ class ZKPFederatedTrainerV2:
         lr: float
     ) -> dict:
         """
-        Build the dictionary for the client circuit input.
-        We'll flatten the old global model and new local model, 
-        plus pick a single example from client data to fill X, Y.
-        For demonstration, we just pick the first sample.
+        Build the dictionary for the client circuit input with proper field normalization.
         """
-        # old_global model => shape [hidden_dim, input_dim], bias => [hidden_dim]
+        # Helper function to normalize tensor values to field
+        def normalize_tensor(tensor):
+            return tensor.detach().cpu().numpy().astype(np.int64) % FIELD_PRIME
+
+        # Get model states
         old_state = self.global_model.state_dict()
-        # new local model => shape [hidden_dim, input_dim], bias => [hidden_dim]
         new_state = client.model.state_dict()
 
-        # We'll adapt them to 2D lists of ints for the circuit
-        GW = old_state["weight"].detach().cpu().numpy()  # shape [hidden_dim, input_dim]
-        GB = old_state["bias"].detach().cpu().numpy()    # shape [hidden_dim]
-        LWp = new_state["weight"].detach().cpu().numpy() # shape [hidden_dim, input_dim]
-        LBp = new_state["bias"].detach().cpu().numpy()   # shape [hidden_dim]
+        # Convert and normalize tensors
+        GW = normalize_tensor(torch.round(old_state["weight"]))  # [hidden_dim, input_dim]
+        GB = normalize_tensor(torch.round(old_state["bias"]))    # [hidden_dim]
+        LWp = normalize_tensor(torch.round(new_state["weight"])) # [hidden_dim, input_dim]
+        LBp = normalize_tensor(torch.round(new_state["bias"]))   # [hidden_dim]
 
-        # We'll treat the circuit as though "LWp" was [hiddenSize][outputSize], 
-        # but in reality we have [10,5]. It's a mismatch from the circuit's perspective,
-        # but let's keep going for demonstration. We won't fully match the example.
-        # The circuit expects LWp dimension = hiddenSize x outputSize => 10x3. 
-        # We'll keep it minimal here, though it's not a perfect 1:1 with the circuit's logic.
-
-        # We'll pick the first sample from the client
+        # Get a sample with proper scaling and normalization
         if len(client.data_x) > 0:
-            x_sample = client.data_x[0].detach().cpu().numpy()
-            y_sample = client.data_y[0].item()
+            x_sample = normalize_tensor(torch.round(client.data_x[0] * self.precision))
+            y_val = client.data_y[0].item()
+            # Create one-hot Y with proper scaling
+            y_sample = np.zeros(self.output_dim)
+            y_sample[y_val % self.output_dim] = self.precision
+            y_sample = y_sample.astype(np.int64) % FIELD_PRIME
         else:
-            x_sample = np.zeros(self.input_dim)
-            y_sample = 0
+            x_sample = np.zeros(self.input_dim, dtype=np.int64)
+            y_sample = np.zeros(self.output_dim, dtype=np.int64)
 
-        # Convert to Python lists of ints
-        def to_python_2d(arr2d):
-            return arr2d.astype(np.int64).tolist()
+        # Convert normalized values to lists
+        def to_int_list(arr):
+            return arr.tolist()
 
-        def to_python_1d(arr1d):
-            return arr1d.astype(np.int64).tolist()
-
-        # We'll slice the 10x5 into 10x3 for LWp if we want to match circuit's output dimension
-        # For demonstration only: just slice to columns=3
-        lw_sliced = LWp[:, :3]  # shape [10,3]
-        # Similarly for LBp, slice to len=3
-        lb_sliced = LBp[:3]     # shape [3]
+        # Slice LWp to match output dimension
+        lw_sliced = LWp[:, :self.output_dim]  # [hidden_dim, output_dim]
+        lb_sliced = LBp[:self.output_dim]     # [output_dim]
 
         circuit_input = {
-            "eta": str(int(lr * self.precision)),
+            "eta": str(float_to_fixed(lr, self.precision)),
             "pr": str(self.precision),
-            "ldigest": str(new_local_hash),
-            "scgh": str(old_global_hash),
-
-            "GW": to_python_2d(GW),  # [10][5]
-            "GB": to_python_1d(GB),  # [10]
-            "LWp": to_python_2d(lw_sliced), # [10][3]
-            "LBp": to_python_1d(lb_sliced), # [3]
-
-            "X": to_python_1d(x_sample),    # [5]
-            # We'll expand y to [3] if the circuit expects that
-            "Y": [int(y_sample), 0, 0]      # hacky: store y in index 0
+            "ldigest": str(normalize_to_field(new_local_hash)),
+            "scgh": str(normalize_to_field(old_global_hash)),
+            "GW": [to_int_list(row) for row in GW],  # [hidden_dim][input_dim]
+            "GB": to_int_list(GB),                    # [hidden_dim]
+            "LWp": [to_int_list(row) for row in lw_sliced], # [hidden_dim][output_dim]
+            "LBp": to_int_list(lb_sliced),                  # [output_dim]
+            "X": to_int_list(x_sample),                     # [input_dim]
+            "Y": to_int_list(y_sample)                      # [output_dim]
         }
+
+        # Verify all values are within field
+        def verify_field_range(name, value):
+            if isinstance(value, list):
+                for i, subval in enumerate(value):
+                    if isinstance(subval, list):
+                        for j, val in enumerate(subval):
+                            if val < 0 or val >= FIELD_PRIME:
+                                logger.error(f"{name}[{i}][{j}] = {val} outside field range!")
+                    else:
+                        if subval < 0 or subval >= FIELD_PRIME:
+                            logger.error(f"{name}[{i}] = {subval} outside field range!")
+            else:
+                if value < 0 or value >= FIELD_PRIME:
+                    logger.error(f"{name} = {value} outside field range!")
+
+        for key, value in circuit_input.items():
+            if key not in ["eta", "pr", "ldigest", "scgh"]:  # Skip string values
+                verify_field_range(key, value)
+
+        # Log the shapes for verification
+        logger.debug("Circuit input shapes:")
+        logger.debug(f"GW: {len(circuit_input['GW'])}x{len(circuit_input['GW'][0])}")
+        logger.debug(f"GB: {len(circuit_input['GB'])}")
+        logger.debug(f"LWp: {len(circuit_input['LWp'])}x{len(circuit_input['LWp'][0])}")
+        logger.debug(f"LBp: {len(circuit_input['LBp'])}")
+        logger.debug(f"X: {len(circuit_input['X'])}")
+        logger.debug(f"Y: {len(circuit_input['Y'])}")
+
         return circuit_input
 
     def train(
