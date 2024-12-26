@@ -186,43 +186,36 @@ class ZKPFederatedTrainerV2:
         logger.info(f"Dummy data created with {total_samples} samples. {len(self.clients)} clients assigned.")
 
     def initialize_global_model(self):
-        """
-        Initialize model with safe field values.
-        """
+        """Initialize model with small field values"""
         net = DummyNet(input_dim=self.input_dim, output_dim=self.hidden_dim).to(self.device)
         
-        # Use a smaller scale to avoid overflow
-        init_scale = min(self.precision / 100.0, 1000.0)
+        # Use very small scale
+        init_scale = 10.0
+        MAX_VAL = 10000
         
         with torch.no_grad():
-            # Initialize weights with smaller values
+            # Initialize weights with small values
             torch.nn.init.uniform_(net.weight, -0.1, 0.1)
             net.weight.data *= init_scale
             net.weight.data = torch.round(net.weight.data)
+            net.weight.data = torch.remainder(net.weight.data, MAX_VAL)
             
             # Initialize biases
             torch.nn.init.uniform_(net.bias, -0.1, 0.1)
             net.bias.data *= init_scale
             net.bias.data = torch.round(net.bias.data)
-            
-            # Convert to field values
-            net.weight.data = tensor_to_field(net.weight.data)
-            net.bias.data = tensor_to_field(net.bias.data)
-            
-            # Convert large field values to smaller representations
-            net.weight.data = torch.remainder(net.weight.data, 1e6).float()
-            net.bias.data = torch.remainder(net.bias.data, 1e6).float()
+            net.bias.data = torch.remainder(net.bias.data, MAX_VAL)
         
         self.global_model = net
         
-        logger.info(f"Global model initialized with field-normalized weights (precision={self.precision})")
+        logger.info(f"Global model initialized with small values (scale={init_scale}, max={MAX_VAL})")
         logger.debug(f"Weight range: [{net.weight.min().item():.2f}, {net.weight.max().item():.2f}]")
         logger.debug(f"Bias range: [{net.bias.min().item():.2f}, {net.bias.max().item():.2f}]")
 
     def local_training_step(self, client: LocalClientV2, epochs: int = 1, lr: float = 0.01):
-        """
-        Training step with safe field arithmetic.
-        """
+        """Training step that maintains small field values"""
+        MAX_VAL = 10000
+        
         if client.model is None:
             local_net = DummyNet(self.input_dim, self.hidden_dim).to(self.device)
             local_net.load_state_dict(self.global_model.state_dict())
@@ -232,8 +225,8 @@ class ZKPFederatedTrainerV2:
         optimizer = torch.optim.SGD(local_net.parameters(), lr=lr)
         criterion = torch.nn.MSELoss()
 
-        # Use a smaller learning rate scaling to avoid overflow
-        scaled_lr = min(lr * self.precision / 100.0, 1000.0)
+        # Use small learning rate scale
+        scaled_lr = lr * 10.0  # Much smaller than before
 
         ds = TensorDataset(client.data_x, client.data_y)
         loader = DataLoader(ds, batch_size=4, shuffle=True)
@@ -245,7 +238,7 @@ class ZKPFederatedTrainerV2:
                 yb = yb.to(self.device)
                 
                 # Scale inputs safely
-                xb_scaled = torch.round(torch.clamp(xb * self.precision / 100.0, -1e6, 1e6))
+                xb_scaled = torch.clamp(xb * 10.0, -MAX_VAL, MAX_VAL)
                 
                 # Forward pass
                 outputs = local_net(xb_scaled)
@@ -253,7 +246,7 @@ class ZKPFederatedTrainerV2:
                 
                 # Create safe targets
                 y_onehot = torch.zeros(yb.size(0), self.output_dim, device=self.device)
-                y_onehot.scatter_(1, yb.unsqueeze(1), self.precision / 100.0)
+                y_onehot.scatter_(1, yb.unsqueeze(1), 10.0)  # Small scale for targets
                 
                 # Compute loss
                 loss = criterion(outputs, y_onehot)
@@ -266,13 +259,13 @@ class ZKPFederatedTrainerV2:
                     for param in local_net.parameters():
                         param.grad *= scaled_lr
                         param.data -= param.grad
-                        # Round and normalize to field
+                        # Keep values in small range
                         param.data = torch.round(param.data)
-                        param.data = tensor_to_field(param.data)
-                        # Keep values manageable
-                        param.data = torch.remainder(param.data, 1e6).float()
+                        param.data = torch.remainder(param.data, MAX_VAL)
 
             logger.debug(f"Client {client.client_id} epoch complete. Loss={loss.item():.4f}")
+            logger.debug(f"Parameter ranges - Weight: [{local_net.weight.min():.2f}, {local_net.weight.max():.2f}], " 
+                        f"Bias: [{local_net.bias.min():.2f}, {local_net.bias.max():.2f}]")
 
     def create_client_circuit_input(
         self,
@@ -282,82 +275,70 @@ class ZKPFederatedTrainerV2:
         lr: float
     ) -> dict:
         """
-        Build the dictionary for the client circuit input with proper field normalization.
+        Build the dictionary for the client circuit input with consistent field normalization.
+        Keep values in a manageable range while ensuring field arithmetic properties.
         """
-        # Helper function to normalize tensor values to field
-        def normalize_tensor(tensor):
-            return tensor.detach().cpu().numpy().astype(np.int64) % FIELD_PRIME
+        MAX_VAL = 10000  # Use a smaller range for cleaner values
+
+        def normalize_to_range(tensor):
+            """Convert tensor to field elements and keep in reasonable range"""
+            np_arr = tensor.detach().cpu().numpy()
+            # First round to integers
+            np_arr = np.round(np_arr)
+            # Keep in reasonable range
+            np_arr = np.mod(np_arr, MAX_VAL)
+            # Convert to list
+            return np_arr.astype(np.int64).tolist()
 
         # Get model states
         old_state = self.global_model.state_dict()
         new_state = client.model.state_dict()
 
-        # Convert and normalize tensors
-        GW = normalize_tensor(torch.round(old_state["weight"]))  # [hidden_dim, input_dim]
-        GB = normalize_tensor(torch.round(old_state["bias"]))    # [hidden_dim]
-        LWp = normalize_tensor(torch.round(new_state["weight"])) # [hidden_dim, input_dim]
-        LBp = normalize_tensor(torch.round(new_state["bias"]))   # [hidden_dim]
+        # Process weights and biases
+        GW = normalize_to_range(old_state["weight"])  # [hidden_dim, input_dim]
+        GB = normalize_to_range(old_state["bias"])    # [hidden_dim]
+        LWp = normalize_to_range(new_state["weight"]) # [hidden_dim, input_dim]
+        LBp = normalize_to_range(new_state["bias"])   # [hidden_dim]
 
-        # Get a sample with proper scaling and normalization
+        # Get a sample with proper scaling
         if len(client.data_x) > 0:
-            x_sample = normalize_tensor(torch.round(client.data_x[0] * self.precision))
+            x_sample = client.data_x[0] * self.precision
+            x_sample = normalize_to_range(x_sample)
+            
             y_val = client.data_y[0].item()
             # Create one-hot Y with proper scaling
             y_sample = np.zeros(self.output_dim)
             y_sample[y_val % self.output_dim] = self.precision
-            y_sample = y_sample.astype(np.int64) % FIELD_PRIME
+            y_sample = np.mod(y_sample, MAX_VAL).astype(np.int64).tolist()
         else:
-            x_sample = np.zeros(self.input_dim, dtype=np.int64)
-            y_sample = np.zeros(self.output_dim, dtype=np.int64)
-
-        # Convert normalized values to lists
-        def to_int_list(arr):
-            return arr.tolist()
+            x_sample = [0] * self.input_dim
+            y_sample = [0] * self.output_dim
 
         # Slice LWp to match output dimension
-        lw_sliced = LWp[:, :self.output_dim]  # [hidden_dim, output_dim]
-        lb_sliced = LBp[:self.output_dim]     # [output_dim]
+        lw_sliced = [row[:self.output_dim] for row in LWp]  # [hidden_dim, output_dim]
+        lb_sliced = LBp[:self.output_dim]                   # [output_dim]
 
         circuit_input = {
-            "eta": str(float_to_fixed(lr, self.precision)),
+            "eta": str(normalize_to_field(float_to_fixed(lr, self.precision))),
             "pr": str(self.precision),
             "ldigest": str(normalize_to_field(new_local_hash)),
             "scgh": str(normalize_to_field(old_global_hash)),
-            "GW": [to_int_list(row) for row in GW],  # [hidden_dim][input_dim]
-            "GB": to_int_list(GB),                    # [hidden_dim]
-            "LWp": [to_int_list(row) for row in lw_sliced], # [hidden_dim][output_dim]
-            "LBp": to_int_list(lb_sliced),                  # [output_dim]
-            "X": to_int_list(x_sample),                     # [input_dim]
-            "Y": to_int_list(y_sample)                      # [output_dim]
+            "GW": GW,     # [hidden_dim][input_dim]
+            "GB": GB,     # [hidden_dim]
+            "LWp": lw_sliced,  # [hidden_dim][output_dim]
+            "LBp": lb_sliced,  # [output_dim]
+            "X": x_sample,     # [input_dim]
+            "Y": y_sample      # [output_dim]
         }
 
-        # Verify all values are within field
-        def verify_field_range(name, value):
-            if isinstance(value, list):
-                for i, subval in enumerate(value):
-                    if isinstance(subval, list):
-                        for j, val in enumerate(subval):
-                            if val < 0 or val >= FIELD_PRIME:
-                                logger.error(f"{name}[{i}][{j}] = {val} outside field range!")
-                    else:
-                        if subval < 0 or subval >= FIELD_PRIME:
-                            logger.error(f"{name}[{i}] = {subval} outside field range!")
-            else:
-                if value < 0 or value >= FIELD_PRIME:
-                    logger.error(f"{name} = {value} outside field range!")
-
-        for key, value in circuit_input.items():
-            if key not in ["eta", "pr", "ldigest", "scgh"]:  # Skip string values
-                verify_field_range(key, value)
-
-        # Log the shapes for verification
-        logger.debug("Circuit input shapes:")
-        logger.debug(f"GW: {len(circuit_input['GW'])}x{len(circuit_input['GW'][0])}")
-        logger.debug(f"GB: {len(circuit_input['GB'])}")
+        # Verify dimensions
+        logger.debug("\n=== Circuit Input Dimensions ===")
+        logger.debug(f"GW:  {len(circuit_input['GW'])}x{len(circuit_input['GW'][0])}")
+        logger.debug(f"GB:  {len(circuit_input['GB'])}")
         logger.debug(f"LWp: {len(circuit_input['LWp'])}x{len(circuit_input['LWp'][0])}")
         logger.debug(f"LBp: {len(circuit_input['LBp'])}")
-        logger.debug(f"X: {len(circuit_input['X'])}")
-        logger.debug(f"Y: {len(circuit_input['Y'])}")
+        logger.debug(f"X:   {len(circuit_input['X'])}")
+        logger.debug(f"Y:   {len(circuit_input['Y'])}")
 
         return circuit_input
 

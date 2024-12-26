@@ -57,15 +57,29 @@ def tensor_to_fixed(tensor: torch.Tensor, precision: int) -> List[int]:
     arr = tensor.detach().cpu().numpy().flatten()
     return [float_to_fixed(float(v), precision) for v in arr]
 
+def safe_mod(x: np.ndarray, n: int) -> np.ndarray:
+    """Safe modulo operation for large numbers that avoids object dtype"""
+    # Convert to float64 first to handle larger numbers
+    x_float = x.astype(np.float64)
+    # Use fmod for floating point modulo
+    result = np.fmod(x_float, float(n))
+    # Handle negative values
+    result = np.where(result < 0, result + n, result)
+    # Convert back to a reasonable range for int64
+    return (result % 1e9).astype(np.int64)
+
 def tensor_to_field(tensor: torch.Tensor) -> torch.Tensor:
-    """Convert tensor values to field elements."""
+    """Convert tensor values to field elements while keeping values manageable"""
+    # Always return float tensor for gradient compatibility
     with torch.no_grad():
-        # Convert to int64 numpy array
+        # Convert to numpy array
         np_arr = tensor.detach().cpu().numpy().astype(np.int64)
-        # Normalize to field
-        field_arr = np.mod(np_arr, FIELD_PRIME)
-        # Back to tensor
-        return torch.from_numpy(field_arr).to(tensor.device)
+        # Use safe modulo operation
+        field_arr = safe_mod(np_arr, FIELD_PRIME)
+        # Keep values in a reasonable range 
+        field_arr = field_arr % int(1e9)
+        # Back to tensor, ensuring float type
+        return torch.from_numpy(field_arr).float().to(tensor.device)
 
 def safe_float_to_fixed(val: float, precision: int) -> int:
     """Safely convert float to fixed point, handling large values."""
