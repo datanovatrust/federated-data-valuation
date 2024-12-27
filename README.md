@@ -533,7 +533,7 @@ plt.savefig('experiments/confusion_matrix.png')
 
 We've integrated a live monitoring dashboard using **TensorBoard** to visualize training progress in real-time.
 
-### How to Us
+### How to Use
 
 1. **Start TensorBoard**
 
