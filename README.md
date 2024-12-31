@@ -531,7 +531,7 @@ plt.savefig('experiments/confusion_matrix.png')
 
 ## 🌟 Live Monitoring Dashboard
 
-We've integrated a live monitoring dashboard using **TensorBoard** to visualize training progress in real-time
+We've integrated a live monitoring dashboard using **TensorBoard** to visualize training progress in real-time.
 
 ### How to Use
 
