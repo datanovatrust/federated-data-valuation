@@ -529,7 +529,7 @@ plt.savefig('experiments/confusion_matrix.png')
 
 ![Confusion Matrix](experiments/confusion_matrix_round_5.png)
 
-## 🌟 Live Monitoring Dashboard
+## 🌟 Live Monitoring Dashboar
 
 We've integrated a live monitoring dashboard using **TensorBoard** to visualize training progress in real-time.
 
