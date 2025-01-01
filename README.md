@@ -527,7 +527,7 @@ sns.heatmap(cm, annot=True)
 plt.savefig('experiments/confusion_matrix.png')
 ```
 
-![Confusion Matrix](experiments/confusion_matrix_round_5.png
+![Confusion Matrix](experiments/confusion_matrix_round_5.png)
 
 ## 🌟 Live Monitoring Dashboard
 
