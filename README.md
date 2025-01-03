@@ -524,7 +524,7 @@ import seaborn as sns
 # After model evaluation
 cm = confusion_matrix(all_targets, all_predictions)
 sns.heatmap(cm, annot=True)
-plt.savefig('experiments/confusion_matrix.png')
+plt.savefig('experiments/confusion_matrix.png'
 ```
 
 ![Confusion Matrix](experiments/confusion_matrix_round_5.png)
