@@ -537,7 +537,7 @@ We've integrated a live monitoring dashboard using **TensorBoard** to visualize 
 
 1. **Start TensorBoard**
 
-   ```bas
+   ```bash
    tensorboard --logdir=runs
    ```
 
