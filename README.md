@@ -12,7 +12,7 @@ This project leverages Wasserstein distance to evaluate client contributions and
 
 ---
 
-## Table of Content
+## Table of Contents
 
 - [🌟 Features](#-features)
 - [🚀 Getting Started](#-getting-started)
