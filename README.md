@@ -497,7 +497,7 @@ We've extended support for more models:
 - **MobileNetV2**
 - **DenseNet**
 
-You can specify the model in the configuration:
+You can specify the model in the configuration
 
 ```yaml
 model:
