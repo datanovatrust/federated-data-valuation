@@ -423,7 +423,7 @@ This project is licensed under the MIT License.
 
 This project implements methods from the paper:
 
-- **Data Valuation and Detections in Federated Learning**  
+- **Data Valuation and Detections in Federated Learning**
   Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang  
   [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
 
