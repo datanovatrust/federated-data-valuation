@@ -431,7 +431,7 @@ We thank the authors for their valuable contributions to the field.
 
 Additionally, we acknowledge the use of the **Fast Differential Privacy** (**fastDP**) library developed by Zhiqi Bu and colleagues, which provides efficient differentially private optimization for PyTorch models.
 
-- **Fast Differential Privacy Library**  
+- **Fast Differential Privacy Library**
   [GitHub Repository](https://github.com/awslabs/fast-differential-privacy)
 
 Please consider citing their work:
