@@ -5,7 +5,7 @@
 Welcome to **Federated Data Valuation**, a federated learning framework that implements the methods proposed in the paper:
 
 > **Data Valuation and Detections in Federated Learning**  
-> Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang
+> Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang  
 > [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
 
 This project leverages Wasserstein distance to evaluate client contributions and detect noisy or irrelevant data in a privacy-preserving manner. It provides a scalable and efficient solution for data valuation in federated learning without relying on validation datasets.
@@ -423,15 +423,15 @@ This project is licensed under the MIT License.
 
 This project implements methods from the paper:
 
-- **Data Valuation and Detections in Federated Learning**
-  Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang
+- **Data Valuation and Detections in Federated Learning**  
+  Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang  
   [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
 
 We thank the authors for their valuable contributions to the field.
 
 Additionally, we acknowledge the use of the **Fast Differential Privacy** (**fastDP**) library developed by Zhiqi Bu and colleagues, which provides efficient differentially private optimization for PyTorch models.
 
-- **Fast Differential Privacy Library**
+- **Fast Differential Privacy Library**  
   [GitHub Repository](https://github.com/awslabs/fast-differential-privacy)
 
 Please consider citing their work:
