@@ -4,7 +4,7 @@
 
 Welcome to **Federated Data Valuation**, a federated learning framework that implements the methods proposed in the paper:
 
-> **Data Valuation and Detections in Federated Learning**  
+> **Data Valuation and Detections in Federated Learning**
 > Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang  
 > [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
 
