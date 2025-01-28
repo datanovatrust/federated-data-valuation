@@ -8,7 +8,7 @@ Welcome to **Federated Data Valuation**, a federated learning framework that imp
 > Wenqian Li, Shuran Fu, Fengrui Zhang, Yan Pang
 > [arXiv:2311.05304](https://arxiv.org/abs/2311.05304)
 
-This project leverages Wasserstein distance to evaluate client contributions and detect noisy or irrelevant data in a privacy-preserving manner. It provides a scalable and efficient solution for data valuation in federated learning without relying on validation datasets
+This project leverages Wasserstein distance to evaluate client contributions and detect noisy or irrelevant data in a privacy-preserving manner. It provides a scalable and efficient solution for data valuation in federated learning without relying on validation datasets.
 
 ---
 
