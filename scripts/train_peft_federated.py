@@ -16,7 +16,7 @@ import logging
 from torchvision import transforms
 import argparse
 
-# ----------------- Logging Configuration -----------------
+# ----------------- Logging Configuration ----------------
 
 # Create a custom logger
 logger = logging.getLogger(__name__)
